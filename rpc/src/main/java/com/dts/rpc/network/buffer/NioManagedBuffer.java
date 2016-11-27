@@ -1,8 +1,13 @@
 package com.dts.rpc.network.buffer;
 
+import com.google.common.base.MoreObjects;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+
+import io.netty.buffer.ByteBufInputStream;
+import io.netty.buffer.Unpooled;
 
 /**
  * @author zhangxin
@@ -15,26 +20,33 @@ public class NioManagedBuffer extends ManagedBuffer {
   }
 
   @Override public long size() {
-    return 0;
+    return buf.remaining();
   }
 
   @Override public ByteBuffer nioByteBuffer() throws IOException {
-    return null;
+    return buf.duplicate();
   }
 
   @Override public InputStream createInputStream() throws IOException {
-    return null;
+    return new ByteBufInputStream(Unpooled.wrappedBuffer(buf));
   }
 
   @Override public ManagedBuffer retain() {
-    return null;
+    return this;
   }
 
   @Override public ManagedBuffer release() {
-    return null;
+    return this;
   }
 
   @Override public Object convertToNetty() throws IOException {
-    return null;
+    return Unpooled.wrappedBuffer(buf);
+  }
+
+  @Override
+  public String toString() {
+    return MoreObjects.toStringHelper(this)
+            .add("buf", buf)
+            .toString();
   }
 }
