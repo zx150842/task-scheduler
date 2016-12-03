@@ -10,10 +10,8 @@ import java.nio.ByteBuffer;
  */
 public abstract class RpcHandler {
 
-  public abstract void receive(
-    TransportClient client,
-    ByteBuffer message,
-    RpcResponseCallback callback);
+  public abstract void receive(TransportClient client, ByteBuffer message,
+      RpcResponseCallback callback);
 
   public void channelActive(TransportClient client) {}
 

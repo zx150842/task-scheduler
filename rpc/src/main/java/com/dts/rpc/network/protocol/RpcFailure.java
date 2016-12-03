@@ -5,7 +5,7 @@ import io.netty.buffer.ByteBuf;
 /**
  * @author zhangxin
  */
-public class RpcFailure extends AbstractMessage {
+public class RpcFailure extends AbstractMessage implements ResponseMessage {
   public final long requestId;
   public final String errorString;
 
@@ -16,17 +16,18 @@ public class RpcFailure extends AbstractMessage {
 
   @Override
   public Type type() {
-    return null;
+    return Type.RpcFailure;
   }
 
   @Override
   public int encodeLength() {
-    return 0;
+    return 8 + Encoders.Strings.encodedLength(errorString);
   }
 
   @Override
   public void encode(ByteBuf buf) {
-
+    buf.writeLong(requestId);
+    Encoders.Strings.encode(buf, errorString);
   }
 
   public static RpcFailure decode(ByteBuf buf) {

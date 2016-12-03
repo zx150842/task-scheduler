@@ -7,7 +7,7 @@ import io.netty.buffer.ByteBuf;
  */
 public interface Encodable {
 
-    int encodeLength();
+  int encodeLength();
 
-    void encode(ByteBuf buf);
+  void encode(ByteBuf buf);
 }

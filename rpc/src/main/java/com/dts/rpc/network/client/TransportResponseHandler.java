@@ -23,97 +23,97 @@ import io.netty.channel.Channel;
  * @author zhangxin
  */
 public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
-    private final Logger logger = LoggerFactory.getLogger(TransportResponseHandler.class);
+  private final Logger logger = LoggerFactory.getLogger(TransportResponseHandler.class);
 
-    private final Channel channel;
-    private final Map<Long, RpcResponseCallback> outstandingRpcs;
+  private final Channel channel;
+  private final Map<Long, RpcResponseCallback> outstandingRpcs;
 
-    private final AtomicLong timeOfLastRequestNs;
+  private final AtomicLong timeOfLastRequestNs;
 
-    public TransportResponseHandler(Channel channel) {
-        this.channel = channel;
-        this.outstandingRpcs = new ConcurrentHashMap<>();
-        this.timeOfLastRequestNs = new AtomicLong(0);
+  public TransportResponseHandler(Channel channel) {
+    this.channel = channel;
+    this.outstandingRpcs = new ConcurrentHashMap<>();
+    this.timeOfLastRequestNs = new AtomicLong(0);
+  }
+
+  public void addRpcRequest(long requestId, RpcResponseCallback callback) {
+    outstandingRpcs.put(requestId, callback);
+  }
+
+  public void removeRpcRequest(long requestId) {
+    outstandingRpcs.remove(requestId);
+  }
+
+  private void failOutstandingRequests(Throwable cause) {
+    for (Map.Entry<Long, RpcResponseCallback> entry : outstandingRpcs.entrySet()) {
+      entry.getValue().onFailure(cause);
     }
+  }
 
-    public void addRpcRequest(long requestId, RpcResponseCallback callback) {
-        outstandingRpcs.put(requestId, callback);
+  @Override
+  public void channelActive() {}
+
+  @Override
+  public void channelInactive() {
+    if (numOutstandingRequests() > 0) {
+      String remoteAddress = NettyUtils.getRemoteAddress(channel);
+      logger.error("Still have {} requests outstanding when connection from {} is closed",
+          numOutstandingRequests(), remoteAddress);
+      failOutstandingRequests(new IOException("Connection from " + remoteAddress + " closed"));
     }
+  }
 
-    public void removeRpcRequest(long requestId) {
-        outstandingRpcs.remove(requestId);
+  @Override
+  public void exceptionCaught(Throwable cause) {
+    if (numOutstandingRequests() > 0) {
+      String remoteAddress = NettyUtils.getRemoteAddress(channel);
+      logger.error("Still have {} requests outstanding when connection from {} is closed",
+          numOutstandingRequests(), remoteAddress);
+      failOutstandingRequests(cause);
     }
+  }
 
-    private void failOutstandingRequests(Throwable cause) {
-        for (Map.Entry<Long, RpcResponseCallback> entry : outstandingRpcs.entrySet()) {
-            entry.getValue().onFailure(cause);
+  @Override
+  public void handle(ResponseMessage message) throws Exception {
+    String remoteAddress = NettyUtils.getRemoteAddress(channel);
+    if (message instanceof RpcResponse) {
+      RpcResponse resp = (RpcResponse) message;
+      RpcResponseCallback listener = outstandingRpcs.get(resp.requestId);
+      if (listener == null) {
+        logger.warn("Ignoring response for RPC {} from {} ({} bytes) since it is not outstanding",
+            resp.requestId, remoteAddress, resp.body().size());
+      } else {
+        outstandingRpcs.remove(resp.requestId);
+        try {
+          listener.onSuccess(resp.body().nioByteBuffer());
+        } finally {
+          resp.body().release();
         }
+      }
+    } else if (message instanceof RpcFailure) {
+      RpcFailure resp = (RpcFailure) message;
+      RpcResponseCallback listener = outstandingRpcs.get(resp.requestId);
+      if (listener == null) {
+        logger.warn("Ignoring response for RPC {} from {} ({} bytes) since it is not outstanding",
+            resp.requestId, remoteAddress, resp.body().size());
+      } else {
+        outstandingRpcs.remove(resp.requestId);
+        listener.onFailure(new RuntimeException(resp.errorString));
+      }
+    } else {
+      throw new IllegalStateException("Unknown response type: " + message.type());
     }
+  }
 
-    @Override
-    public void channelActive() {}
+  public int numOutstandingRequests() {
+    return outstandingRpcs.size();
+  }
 
-    @Override
-    public void channelInactive() {
-        if (numOutstandingRequests() > 0) {
-            String remoteAddress = NettyUtils.getRemoteAddress(channel);
-            logger.error("Still have {} requests outstanding when connection from {} is closed",
-                    numOutstandingRequests(), remoteAddress);
-            failOutstandingRequests(new IOException("Connection from " + remoteAddress + " closed"));
-        }
-    }
+  public long getTimeOfLastRequestNs() {
+    return timeOfLastRequestNs.get();
+  }
 
-    @Override
-    public void exceptionCaught(Throwable cause) {
-        if (numOutstandingRequests() > 0) {
-            String remoteAddress = NettyUtils.getRemoteAddress(channel);
-            logger.error("Still have {} requests outstanding when connection from {} is closed",
-                    numOutstandingRequests(), remoteAddress);
-            failOutstandingRequests(cause);
-        }
-    }
-
-    @Override
-    public void handle(ResponseMessage message) throws Exception {
-        String remoteAddress = NettyUtils.getRemoteAddress(channel);
-        if (message instanceof RpcResponse) {
-            RpcResponse resp = (RpcResponse) message;
-            RpcResponseCallback listener = outstandingRpcs.get(resp.requestId);
-            if (listener == null) {
-                logger.warn("Ignoring response for RPC {} from {} ({} bytes) since it is not outstanding",
-                        resp.requestId, remoteAddress, resp.body().size());
-            } else {
-                outstandingRpcs.remove(resp.requestId);
-                try {
-                    listener.onSuccess(resp.body().nioByteBuffer());
-                } finally {
-                    resp.body().release();
-                }
-            }
-        } else if (message instanceof RpcFailure) {
-            RpcFailure resp = (RpcFailure) message;
-            RpcResponseCallback listener = outstandingRpcs.get(resp.requestId);
-            if (listener == null) {
-                logger.warn("Ignoring response for RPC {} from {} ({} bytes) since it is not outstanding",
-                        resp.requestId, remoteAddress, resp.body().size());
-            } else {
-                outstandingRpcs.remove(resp.requestId);
-                listener.onFailure(new RuntimeException(resp.errorString));
-            }
-        } else {
-            throw new IllegalStateException("Unknown response type: " + message.type());
-        }
-    }
-
-    public int numOutstandingRequests() {
-        return outstandingRpcs.size();
-    }
-
-    public long getTimeOfLastRequestNs() {
-        return timeOfLastRequestNs.get();
-    }
-
-    public void updateTimeOfLastRequest() {
-        timeOfLastRequestNs.set(System.nanoTime());
-    }
+  public void updateTimeOfLastRequest() {
+    timeOfLastRequestNs.set(System.nanoTime());
+  }
 }

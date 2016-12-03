@@ -28,25 +28,29 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
   private final RpcHandler rpcHandler;
 
   public TransportRequestHandler(Channel channel, TransportClient reverseClient,
-    RpcHandler rpcHandler) {
+      RpcHandler rpcHandler) {
     this.channel = channel;
     this.reverseClient = reverseClient;
     this.rpcHandler = rpcHandler;
   }
 
-  @Override public void channelActive() {
+  @Override
+  public void channelActive() {
     rpcHandler.channelActive(reverseClient);
   }
 
-  @Override public void exceptionCaught(Throwable cause) {
+  @Override
+  public void exceptionCaught(Throwable cause) {
     rpcHandler.exceptionCaught(cause, reverseClient);
   }
 
-  @Override public void channelInactive() {
+  @Override
+  public void channelInactive() {
     rpcHandler.channelInactive(reverseClient);
   }
 
-  @Override public void handle(RequestMessage request) {
+  @Override
+  public void handle(RequestMessage request) {
     if (request instanceof RpcRequest) {
       processRpcRequest((RpcRequest) request);
     } else {
@@ -57,11 +61,13 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
   private void processRpcRequest(RpcRequest request) {
     try {
       rpcHandler.receive(reverseClient, request.body().nioByteBuffer(), new RpcResponseCallback() {
-        @Override public void onSuccess(ByteBuffer response) {
+        @Override
+        public void onSuccess(ByteBuffer response) {
           respond(new RpcResponse(request.requestId, new NioManagedBuffer(response)));
         }
 
-        @Override public void onFailure(Throwable e) {
+        @Override
+        public void onFailure(Throwable e) {
           respond(new RpcFailure(request.requestId, e.toString()));
         }
       });
@@ -76,12 +82,13 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
   private void respond(final Message result) {
     final String remoteAddress = channel.remoteAddress().toString();
     channel.writeAndFlush(result).addListener(new ChannelFutureListener() {
-      @Override public void operationComplete(ChannelFuture future) throws Exception {
+      @Override
+      public void operationComplete(ChannelFuture future) throws Exception {
         if (future.isSuccess()) {
           logger.trace("Sent result {} to client {}", result, remoteAddress);
         } else {
-          logger.error("Error sending result {} to {}; closing connection",
-                  result, remoteAddress, future.cause());
+          logger.error("Error sending result {} to {}; closing connection", result, remoteAddress,
+              future.cause());
           channel.close();
         }
       }

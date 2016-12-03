@@ -1,0 +1,25 @@
+#### Intellij ###
+#.idea/
+#
+#### Gradle ###
+#.gradle/
+#gradle/
+#gradlew*
+#
+#### Java ###
+#*.class
+#
+## BlueJ files
+#*.ctxt
+#
+## Mobile Tools for Java (J2ME)
+#.mtj.tmp/
+#
+## Package Files #
+#*.jar
+#*.war
+#*.ear
+#/**/gradlew
+#/**/.idea
+#/**/.gradle
+#/**/build/

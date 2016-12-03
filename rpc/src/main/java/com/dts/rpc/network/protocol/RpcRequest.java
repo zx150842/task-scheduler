@@ -13,23 +13,24 @@ public final class RpcRequest extends AbstractMessage implements RequestMessage 
   public final long requestId;
 
   public RpcRequest(long requestId, ManagedBuffer message) {
-    super(message);
+    super(message, true);
     this.requestId = requestId;
   }
 
   @Override
   public Type type() {
-    return null;
+    return Type.RpcRequest;
   }
 
   @Override
   public int encodeLength() {
-    return 0;
+    return 8 + 4;
   }
 
   @Override
   public void encode(ByteBuf buf) {
-
+    buf.writeLong(requestId);
+    buf.writeInt((int) body().size());
   }
 
   public static RpcRequest decode(ByteBuf buf) {

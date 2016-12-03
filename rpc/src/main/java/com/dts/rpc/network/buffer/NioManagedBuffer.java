@@ -19,34 +19,38 @@ public class NioManagedBuffer extends ManagedBuffer {
     this.buf = buf;
   }
 
-  @Override public long size() {
+  @Override
+  public long size() {
     return buf.remaining();
   }
 
-  @Override public ByteBuffer nioByteBuffer() throws IOException {
+  @Override
+  public ByteBuffer nioByteBuffer() throws IOException {
     return buf.duplicate();
   }
 
-  @Override public InputStream createInputStream() throws IOException {
+  @Override
+  public InputStream createInputStream() throws IOException {
     return new ByteBufInputStream(Unpooled.wrappedBuffer(buf));
   }
 
-  @Override public ManagedBuffer retain() {
+  @Override
+  public ManagedBuffer retain() {
     return this;
   }
 
-  @Override public ManagedBuffer release() {
+  @Override
+  public ManagedBuffer release() {
     return this;
   }
 
-  @Override public Object convertToNetty() throws IOException {
+  @Override
+  public Object convertToNetty() throws IOException {
     return Unpooled.wrappedBuffer(buf);
   }
 
   @Override
   public String toString() {
-    return MoreObjects.toStringHelper(this)
-            .add("buf", buf)
-            .toString();
+    return MoreObjects.toStringHelper(this).add("buf", buf).toString();
   }
 }
