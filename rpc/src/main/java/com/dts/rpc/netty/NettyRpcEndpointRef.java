@@ -1,6 +1,8 @@
 package com.dts.rpc.netty;
 
 import com.dts.rpc.*;
+import com.dts.rpc.network.client.TransportClient;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,6 +19,7 @@ public class NettyRpcEndpointRef extends RpcEndpointRef {
 
   private final RpcEndpointAddress endpointAddress;
   private final NettyRpcEnv nettyRpcEnv;
+  private TransportClient client;
 
   public NettyRpcEndpointRef(DTSConf conf, RpcEndpointAddress endpointAddress,
       NettyRpcEnv nettyRpcEnv) {
@@ -39,6 +42,8 @@ public class NettyRpcEndpointRef extends RpcEndpointRef {
   protected Logger logger() {
     return logger;
   }
+
+  public TransportClient client() { return client; }
 
   public void send(Object message) {
 

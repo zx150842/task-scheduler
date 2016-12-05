@@ -1,23 +1,20 @@
 package com.dts.rpc.netty;
 
-import com.dts.rpc.MasterConf;
-import com.dts.rpc.RpcEndpoint;
+import com.dts.rpc.RpcAddress;
+import com.dts.rpc.netty.message.InboxMessage;
+import com.dts.rpc.netty.message.RpcRequestMessage;
 import com.dts.rpc.network.client.RpcResponseCallback;
 import com.dts.rpc.network.client.TransportClient;
 import com.dts.rpc.network.server.RpcHandler;
+
 import com.google.common.collect.Maps;
-import com.google.common.collect.Queues;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Map;
-import java.util.Queue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * @author zhangxin
@@ -27,6 +24,7 @@ public class NettyRpcHandler extends RpcHandler {
 
   private final Dispatcher dispatcher;
   private final NettyRpcEnv nettyRpcEnv;
+  private final Map<RpcAddress, RpcAddress> remoteAddresses = Maps.newConcurrentMap();
 
   NettyRpcHandler(Dispatcher dispatcher, NettyRpcEnv nettyRpcEnv) {
     this.dispatcher = dispatcher;
@@ -35,6 +33,29 @@ public class NettyRpcHandler extends RpcHandler {
 
   @Override
   public void receive(TransportClient client, ByteBuffer message, RpcResponseCallback callback) {
+    RpcRequestMessage messageToDispatch = internalReceive(client, message);
+    dispatcher.postRemoteMessage(messageToDispatch, callback);
+  }
 
+  @Override
+  public void receive(TransportClient client, ByteBuffer message) {
+    RpcRequestMessage messageToDispatch = internalReceive(client, message);
+    dispatcher.postOneWayMessage(messageToDispatch);
+  }
+
+  private RpcRequestMessage internalReceive(TransportClient client, ByteBuffer message) {
+    InetSocketAddress address = (InetSocketAddress) client.getChannel().remoteAddress();
+    assert address != null;
+    RpcAddress clientAddress = new RpcAddress(address.getHostString(), address.getPort());
+    RpcRequestMessage requestMessage = nettyRpcEnv.deserialize(client, message);
+    if (requestMessage.senderAddress == null) {
+      return new RpcRequestMessage(clientAddress, requestMessage.receiver, requestMessage.content);
+    } else {
+      RpcAddress remoteEnvAddress = requestMessage.senderAddress;
+      if (remoteAddresses.putIfAbsent(clientAddress, remoteEnvAddress) == null) {
+        dispatcher.postToAll(new InboxMessage.RemoteProcessConnected(remoteEnvAddress));
+      }
+      return requestMessage;
+    }
   }
 }

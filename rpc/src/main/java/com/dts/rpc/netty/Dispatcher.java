@@ -18,6 +18,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author zhangxin
@@ -90,10 +91,13 @@ public class Dispatcher {
     }
   }
 
-  public void stop(NettyRpcEndpointRef rpcEndpointRef) {
+  public void stop() {
     synchronized (this) {
       if (stopped) { return; }
-      unregisterRpcEndpoint(rpcEndpointRef.name());
+      for (String name : endpoints.keySet()) {
+        unregisterRpcEndpoint(name);
+        threadPool.shutdown();
+      }
     }
   }
 
@@ -138,6 +142,14 @@ public class Dispatcher {
         data.inbox.post(message);
         receivers.offer(data);
       }
+    }
+  }
+
+  public void awaitTermination() {
+    try {
+      threadPool.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
     }
   }
 

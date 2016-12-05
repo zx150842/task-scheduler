@@ -37,22 +37,22 @@ public class InboxMessage {
     }
   }
 
-  public static class AskInboxMessage extends InboxMessage {
+  public static class OneWayInboxMessage extends InboxMessage {
     public RpcAddress senderAddress;
     public Object content;
 
-    public AskInboxMessage(RpcAddress senderAddress, Object content) {
+    public OneWayInboxMessage(RpcAddress senderAddress, Object content) {
       this.senderAddress = senderAddress;
       this.content = content;
     }
   }
 
-  public static class AskReplyInboxMessage extends InboxMessage {
+  public static class RpcInboxMessage extends InboxMessage {
     public final RpcAddress senderAddress;
     public final Object content;
     public final NettyRpcCallContext context;
 
-    public AskReplyInboxMessage(RpcAddress senderAddress, Object content, NettyRpcCallContext context) {
+    public RpcInboxMessage(RpcAddress senderAddress, Object content, NettyRpcCallContext context) {
       this.senderAddress = senderAddress;
       this.content = content;
       this.context = context;

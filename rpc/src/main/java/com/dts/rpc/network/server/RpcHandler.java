@@ -13,6 +13,8 @@ public abstract class RpcHandler {
   public abstract void receive(TransportClient client, ByteBuffer message,
       RpcResponseCallback callback);
 
+  public abstract void receive(TransportClient client, ByteBuffer message);
+
   public void channelActive(TransportClient client) {}
 
   public void channelInactive(TransportClient client) {}
