@@ -1,18 +1,18 @@
 package com.dts.rpc.netty;
 
+import com.dts.rpc.RpcCallContext;
 import com.dts.rpc.RpcEndpoint;
 import com.dts.rpc.RpcEndpointAddress;
 import com.dts.rpc.RpcEndpointRef;
-import com.dts.rpc.netty.message.InboxMessage;
-import com.dts.rpc.netty.message.RpcRequestMessage;
 import com.dts.rpc.network.client.RpcResponseCallback;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
+import com.google.common.util.concurrent.SettableFuture;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Iterator;
+import javax.annotation.Nullable;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executors;
@@ -37,6 +37,8 @@ public class Dispatcher {
 
   private final boolean stopped = false;
 
+  private final EndpointData PoisonPill = new EndpointData(null, null, null);
+
   public Dispatcher(NettyRpcEnv nettyRpcEnv) {
 
     this.nettyRpcEnv = nettyRpcEnv;
@@ -57,8 +59,11 @@ public class Dispatcher {
       while (true) {
         try {
           EndpointData data = receivers.take();
+          if (data == PoisonPill) {
+            receivers.offer(PoisonPill);
+            return;
+          }
           data.inbox.process(Dispatcher.this);
-          // TODO process data
         } catch (InterruptedException e) {
           logger.error(e.getMessage(), e);
         }
@@ -86,7 +91,7 @@ public class Dispatcher {
   public void unregisterRpcEndpoint(String name) {
     EndpointData data = endpoints.remove(name);
     if (data != null) {
-      //TODO stop inbox
+      data.inbox.stop();
       receivers.offer(data);
     }
   }
@@ -101,6 +106,13 @@ public class Dispatcher {
     }
   }
 
+  public void stop(RpcEndpointRef rpcEndpointRef) {
+    synchronized (this) {
+      if (stopped) { return; }
+      unregisterRpcEndpoint(rpcEndpointRef.name());
+    }
+  }
+
   public RpcEndpointRef getRpcEndpointRef(RpcEndpoint endpoint) {
     return endpointRefs.get(endpoint);
   }
@@ -111,36 +123,40 @@ public class Dispatcher {
 
   public void postToAll(InboxMessage message) {
     for (String name : endpoints.keySet()) {
-      postMessage(name, message);
+      postMessage(name, message, null);
     }
   }
 
   public void postOneWayMessage(RpcRequestMessage message) {
-    postMessage(message.receiver.name(), new InboxMessage.AskInboxMessage(message.senderAddress, message.content));
+    postMessage(message.receiver.name(), new OneWayInboxMessage(message.senderAddress, message.content), null);
   }
 
-  public void postLocalMessage(RpcRequestMessage message) {
-    NettyRpcCallContext rpcCallContext = new LocalNettyRpcCallContext(message);
-    InboxMessage.AskReplyInboxMessage rpcMessage = new InboxMessage.AskReplyInboxMessage(message.senderAddress, message.content, rpcCallContext);
-    postMessage(message.receiver.name(), rpcMessage);
+  public void postLocalMessage(RpcRequestMessage message, SettableFuture future) {
+    RpcCallContext rpcCallContext = new LocalNettyRpcCallContext(message.senderAddress, future);
+    RpcInboxMessage rpcMessage = new RpcInboxMessage(message.senderAddress, message.content, rpcCallContext);
+    postMessage(message.receiver.name(), rpcMessage, rpcCallContext);
   }
 
   public void postRemoteMessage(RpcRequestMessage message, RpcResponseCallback callback) {
-    NettyRpcCallContext rpcCallContext = new RemoteNettyRpcCallContext(nettyRpcEnv, callback, message.senderAddress);
-    InboxMessage.AskReplyInboxMessage rpcMessage = new InboxMessage.AskReplyInboxMessage(message.senderAddress, message.content, rpcCallContext);
-    postMessage(message.receiver.name(), rpcMessage);
+    RpcCallContext rpcCallContext = new RemoteNettyRpcCallContext(nettyRpcEnv, callback, message.senderAddress);
+    RpcInboxMessage rpcMessage = new RpcInboxMessage(message.senderAddress, message.content, rpcCallContext);
+    postMessage(message.receiver.name(), rpcMessage, rpcCallContext);
   }
 
-  private void postMessage(String endpointName, InboxMessage message) {
+  private void postMessage(String endpointName, InboxMessage message, @Nullable RpcCallContext callback) {
     synchronized (this) {
       EndpointData data = endpoints.get(endpointName);
+      Throwable error = null;
       if (stopped) {
-
+        error = new IllegalStateException("RpcEnv already stopped");
       } else if (data == null) {
-
+        error = new RuntimeException("Could not find " + endpointName);
       } else {
         data.inbox.post(message);
         receivers.offer(data);
+      }
+      if (error != null && callback != null) {
+        callback.sendFailure(error);
       }
     }
   }
@@ -151,6 +167,10 @@ public class Dispatcher {
     } catch (InterruptedException e) {
       throw new RuntimeException(e);
     }
+  }
+
+  public boolean verfify(String name) {
+    return endpoints.containsKey(name);
   }
 
   class EndpointData {

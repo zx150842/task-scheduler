@@ -1,7 +1,5 @@
 package com.dts.rpc;
 
-import com.dts.rpc.RpcAddress;
-
 /**
  * @author zhangxin
  */

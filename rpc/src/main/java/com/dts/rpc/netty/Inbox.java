@@ -1,7 +1,6 @@
 package com.dts.rpc.netty;
 
 import com.dts.rpc.RpcEndpoint;
-import com.dts.rpc.netty.message.InboxMessage;
 import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,20 +37,20 @@ public class Inbox {
         }
       }
       try {
-        if (message instanceof InboxMessage.AskReplyInboxMessage) {
-          InboxMessage.AskReplyInboxMessage msg = (InboxMessage.AskReplyInboxMessage)message;
+        if (message instanceof RpcInboxMessage) {
+          RpcInboxMessage msg = (RpcInboxMessage)message;
           try {
             endpoint.receiveAndReply(msg.context);
           } catch (Throwable e) {
             msg.context.sendFailure(e);
             throw e;
           }
-        } else if (message instanceof InboxMessage.AskInboxMessage) {
-          InboxMessage.AskInboxMessage msg = (InboxMessage.AskInboxMessage)message;
+        } else if (message instanceof OneWayInboxMessage) {
+          OneWayInboxMessage msg = (OneWayInboxMessage)message;
           endpoint.receive(msg.content);
-        } else if (message instanceof InboxMessage.OnStart) {
+        } else if (message instanceof OnStart) {
           endpoint.onStart();
-        } else if (message instanceof InboxMessage.OnStop) {
+        } else if (message instanceof OnStop) {
           int activeThreads;
           synchronized (this) {
             activeThreads = numActiveThreads;
@@ -60,14 +59,14 @@ public class Inbox {
           dispatcher.removeRpcEndpointRef(endpoint);
           endpoint.onStop();
           assert isEmpty();
-        } else if (message instanceof InboxMessage.RemoteProcessConnected) {
-          InboxMessage.RemoteProcessConnected msg = (InboxMessage.RemoteProcessConnected)message;
+        } else if (message instanceof RemoteProcessConnected) {
+          RemoteProcessConnected msg = (RemoteProcessConnected)message;
           endpoint.onConnected(msg.remoteAddress);
-        } else if (message instanceof InboxMessage.RemoteProcessDisconnected) {
-          InboxMessage.RemoteProcessDisconnected msg = (InboxMessage.RemoteProcessDisconnected)message;
+        } else if (message instanceof RemoteProcessDisconnected) {
+          RemoteProcessDisconnected msg = (RemoteProcessDisconnected)message;
           endpoint.onDisconnected(msg.remoteAddress);
-        } else if (message instanceof InboxMessage.RemoteProcessConnectionError) {
-          InboxMessage.RemoteProcessConnectionError msg = (InboxMessage.RemoteProcessConnectionError)message;
+        } else if (message instanceof RemoteProcessConnectionError) {
+          RemoteProcessConnectionError msg = (RemoteProcessConnectionError)message;
           endpoint.onNetworkError(msg.cause, msg.remoteAddress);
         }
       } catch (Throwable e) {
@@ -83,7 +82,7 @@ public class Inbox {
   public synchronized void stop() {
     if (!stopped) {
       stopped = true;
-      messages.add(new InboxMessage.OnStop());
+      messages.add(new OnStop());
     }
   }
 

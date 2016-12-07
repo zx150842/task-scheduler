@@ -1,3 +1,5 @@
 dependencies {
-    testCompile group: 'junit', name: 'junit', version: '4.11'
+    compile project(':rpc')
+    compile group: 'org.apache.curator', name: 'curator-recipes', version: "$CURATOR_VERSION"
+    compile group: 'org.apache.curator', name: 'curator-test', version: "$CURATOR_VERSION"
 }

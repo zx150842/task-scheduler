@@ -1,9 +1,18 @@
 package com.dts.rpc;
 
+import com.dts.rpc.netty.NettyRpcEnv;
+import com.google.common.base.Preconditions;
+
 /**
  * @author zhangxin
  */
 public abstract class RpcEndpoint {
+
+  protected NettyRpcEnv rpcEnv;
+
+  public RpcEndpoint(NettyRpcEnv rpcEnv) {
+    this.rpcEnv = rpcEnv;
+  }
 
   public abstract void receive(Object o);
 
@@ -20,4 +29,9 @@ public abstract class RpcEndpoint {
   public void onStart() {}
 
   public void onStop() {}
+
+  protected RpcEndpointRef self() {
+    Preconditions.checkNotNull(rpcEnv, "rpcEnv has not been initialized");
+    return rpcEnv.endpointRef(this);
+  }
 }

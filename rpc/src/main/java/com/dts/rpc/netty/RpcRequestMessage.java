@@ -1,12 +1,13 @@
-package com.dts.rpc.netty.message;
+package com.dts.rpc.netty;
 
 import com.dts.rpc.RpcAddress;
-import com.dts.rpc.netty.NettyRpcEndpointRef;
+
+import java.io.Serializable;
 
 /**
  * @author zhangxin
  */
-public class RpcRequestMessage {
+public class RpcRequestMessage implements Serializable {
   public final RpcAddress senderAddress;
   public final NettyRpcEndpointRef receiver;
   public final Object content;

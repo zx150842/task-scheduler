@@ -1,7 +1,6 @@
 package com.dts.rpc.netty;
 
 import com.dts.rpc.RpcAddress;
-import com.dts.rpc.netty.message.OutboxMessage;
 import com.dts.rpc.network.client.TransportClient;
 import com.google.common.collect.Lists;
 

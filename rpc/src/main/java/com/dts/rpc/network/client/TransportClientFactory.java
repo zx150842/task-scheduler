@@ -27,7 +27,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 
 /**
- * Created by zhangxin on 2016/11/26.
+ * @author zhangxin
  */
 public class TransportClientFactory implements Closeable {
   private final Logger logger = LoggerFactory.getLogger(TransportClientFactory.class);

@@ -4,24 +4,17 @@ import com.dts.rpc.DTSConf;
 import com.dts.rpc.RpcAddress;
 import com.dts.rpc.RpcEndpoint;
 import com.dts.rpc.RpcEndpointRef;
-import com.dts.rpc.netty.message.InboxMessage;
-import com.dts.rpc.netty.message.OutboxMessage;
-import com.dts.rpc.netty.message.RpcRequestMessage;
 import com.dts.rpc.network.TransportContext;
-import com.dts.rpc.network.client.RpcResponseCallback;
 import com.dts.rpc.network.client.TransportClient;
 import com.dts.rpc.network.client.TransportClientFactory;
-import com.dts.rpc.network.protocol.RpcFailure;
 import com.dts.rpc.network.server.TransportServer;
 import com.dts.rpc.network.util.NettyUtils;
 import com.dts.rpc.network.util.TransportConf;
 import com.dts.rpc.util.SerializerInstance;
 
 import com.google.common.collect.Maps;
-import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.SettableFuture;
 
-import org.apache.commons.lang3.ThreadUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,8 +25,6 @@ import java.util.Map;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import io.netty.buffer.ByteBuf;
 
 /**
  * @author zhangxin
@@ -75,7 +66,7 @@ public class NettyRpcEnv {
 
   public void startServer(int port) {
     server = transportContext.createServer(host, port);
-    // TODO register to dispatcher
+//    dispatcher.registerRpcEndpoint()
   }
 
   public DTSConf conf() {
@@ -106,7 +97,7 @@ public class NettyRpcEnv {
     return serializerInstance.serialize(content);
   }
 
-  public <T> T deserialize(TransportClient client, ByteBuffer bytes) {
+  public Object deserialize(TransportClient client, ByteBuffer bytes) {
     return serializerInstance.deserialize(bytes);
   }
 
@@ -131,24 +122,24 @@ public class NettyRpcEnv {
     if (remoteAddr == address()) {
       dispatcher.postOneWayMessage(message);
     } else {
-      postToOutbox(message.receiver, new OutboxMessage.OneWayOutboxMessage(serialize(message)));
+      postToOutbox(message.receiver, new OneWayOutboxMessage(serialize(message)));
     }
   }
 
-  public <T> Future<T> ask(RpcRequestMessage message, long timeoutMs, RpcResponseCallback callback) {
+  public <T> Future<T> ask(RpcRequestMessage message, long timeoutMs) {
+    SettableFuture<T> future = SettableFuture.create();
     RpcAddress remoteAddr = message.receiver.address();
     try {
       if (remoteAddr == address()) {
-        Futures.addCallback();
+        dispatcher.postLocalMessage(message, future);
       } else {
-        SettableFuture<T> future = SettableFuture.create();
-        OutboxMessage.RpcOutboxMessage rpcMessage = new OutboxMessage.RpcOutboxMessage(serialize(message), )
-        postToOutbox(message.receiver, );
-
+        RpcOutboxMessage rpcMessage = new RpcOutboxMessage(serialize(message), future);
+        postToOutbox(message.receiver, rpcMessage);
       }
     } catch (Throwable e) {
-
+      logger.warn("Ignored failure", e);
     }
+    return future;
   }
 
 
