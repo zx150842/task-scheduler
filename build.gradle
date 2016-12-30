@@ -16,6 +16,7 @@ subprojects {
         COMMONS_LANG_VERSION = '3.5'
         JSR305_VERSION = '3.0.1'
         CURATOR_VERSION = '3.2.1'
+        SPRING_VERSION = '4.3.4.RELEASE'
     }
 
     dependencies {

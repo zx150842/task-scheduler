@@ -2,4 +2,7 @@ dependencies {
     compile project(':rpc')
     compile group: 'org.apache.curator', name: 'curator-recipes', version: "$CURATOR_VERSION"
     compile group: 'org.apache.curator', name: 'curator-test', version: "$CURATOR_VERSION"
+    compile group: 'org.springframework', name: 'spring-jdbc', version: "$SPRING_VERSION"
+    compile group: 'org.springframework', name: 'spring-core', version: "$SPRING_VERSION"
+    compile group: 'org.springframework', name: 'spring-context', version: "$SPRING_VERSION"
 }

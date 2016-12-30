@@ -1,7 +1,12 @@
 package com.dts.core.master;
 
+import com.dts.core.queue.ExecutingTaskQueue;
+import com.dts.core.queue.TaskQueueContext;
 import com.dts.core.util.CuratorUtil;
+import com.dts.core.util.Tuple2;
 import com.dts.rpc.DTSConf;
+import com.dts.rpc.RpcEnv;
+import com.dts.rpc.netty.NettyRpcEnv;
 import com.dts.rpc.util.SerializerInstance;
 import com.google.common.collect.Lists;
 import org.apache.curator.framework.CuratorFramework;
@@ -37,6 +42,28 @@ public class ZooKeeperPersistenceEngine {
     } catch (Exception e) {
       throw new RuntimeException(e);
     }
+  }
+
+  public final Tuple2<WorkerInfo[], ClientInfo[]> readPersistedData(NettyRpcEnv rpcEnv) {
+    WorkerInfo[] workerInfos = read("worker_");
+    ClientInfo[] clientInfos = read("client_");
+    return new Tuple2<>(workerInfos, clientInfos);
+  }
+
+  public final void addWorker(WorkerInfo worker) {
+    persist("worker_" + worker.id, worker);
+  }
+
+  public final void addClient(ClientInfo client) {
+    persist("client_" + client.id, client);
+  }
+
+  public void removeWorker(WorkerInfo worker) {
+    unpersist("worker_" + worker.id);
+  }
+
+  public void removeClient(ClientInfo client) {
+    unpersist("client_" + client.id);
   }
 
   public <T> T[] read(String prefix) {

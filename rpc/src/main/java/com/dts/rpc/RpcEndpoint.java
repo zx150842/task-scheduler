@@ -16,7 +16,7 @@ public abstract class RpcEndpoint {
 
   public abstract void receive(Object o);
 
-  public abstract void receiveAndReply(RpcCallContext context);
+  public abstract void receiveAndReply(Object o, RpcCallContext context);
 
   public void onError(Throwable cause) throws Throwable { throw cause; }
 

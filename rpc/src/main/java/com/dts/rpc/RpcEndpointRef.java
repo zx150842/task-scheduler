@@ -28,11 +28,15 @@ public abstract class RpcEndpointRef {
 
   public abstract void send(Object message);
 
-  public abstract <T> Future<T> ask(T message, long timeoutMs);
+  public abstract <T> Future<T> ask(Object message, long timeoutMs);
+
+  public <T> Future<T> ask(Object message) {
+    return ask(message, defaultAskTimeoutMs);
+  }
 
   protected abstract Logger logger();
 
-  public <T> Object askWithRetry(T message, long timeoutMs) {
+  public <T> Object askWithRetry(Object message, long timeoutMs) {
     int attempts = 0;
     Exception lastException = null;
     while (attempts < maxRetries) {

@@ -1,9 +1,6 @@
 package com.dts.rpc.netty;
 
-import com.dts.rpc.DTSConf;
-import com.dts.rpc.RpcAddress;
-import com.dts.rpc.RpcEndpoint;
-import com.dts.rpc.RpcEndpointRef;
+import com.dts.rpc.*;
 import com.dts.rpc.network.TransportContext;
 import com.dts.rpc.network.client.TransportClient;
 import com.dts.rpc.network.client.TransportClientFactory;
@@ -22,6 +19,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -90,6 +88,24 @@ public class NettyRpcEnv {
     Outbox outbox = outboxes.remove(address);
     if (outbox != null) {
       outbox.stop();
+    }
+  }
+
+  public RpcEndpointRef setupEndpoint(String name, RpcEndpoint endpoint) {
+    return dispatcher.registerRpcEndpoint(name, endpoint);
+  }
+
+  public RpcEndpointRef setupEndpointRef(RpcAddress address, String endpointName) {
+    NettyRpcEndpointRef verifier = new NettyRpcEndpointRef(conf, new RpcEndpointAddress(address, RpcEndpointVerifier.NAME),this);
+    Future future = verifier.ask(new RpcEndpointVerifier.CheckExistence(endpointName));
+    try {
+      boolean verified = (boolean)future.get();
+      if (verified) {
+        return new NettyRpcEndpointRef(conf, new RpcEndpointAddress(address, endpointName), this);
+      }
+      throw new RuntimeException("Cannot find endpoint: " + address);
+    } catch (Throwable e) {
+      throw new RuntimeException(e);
     }
   }
 

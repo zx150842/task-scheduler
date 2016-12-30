@@ -53,7 +53,7 @@ public class NettyRpcEndpointRef extends RpcEndpointRef implements Serializable 
     nettyRpcEnv.send(new RpcRequestMessage(nettyRpcEnv.address(), this, message));
   }
 
-  public <T> Future<T> ask(T message, long timeoutMs) {
+  public <T> Future<T> ask(Object message, long timeoutMs) {
     RpcRequestMessage rpcMessage = new RpcRequestMessage(nettyRpcEnv.address(), this, message);
     return nettyRpcEnv.ask(rpcMessage, timeoutMs);
   }
