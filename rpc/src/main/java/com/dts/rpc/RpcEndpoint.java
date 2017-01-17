@@ -1,6 +1,5 @@
 package com.dts.rpc;
 
-import com.dts.rpc.netty.NettyRpcEnv;
 import com.google.common.base.Preconditions;
 
 /**
@@ -8,9 +7,9 @@ import com.google.common.base.Preconditions;
  */
 public abstract class RpcEndpoint {
 
-  protected NettyRpcEnv rpcEnv;
+  protected RpcEnv rpcEnv;
 
-  public RpcEndpoint(NettyRpcEnv rpcEnv) {
+  public RpcEndpoint(RpcEnv rpcEnv) {
     this.rpcEnv = rpcEnv;
   }
 

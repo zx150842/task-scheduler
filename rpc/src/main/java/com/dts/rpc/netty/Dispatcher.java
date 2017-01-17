@@ -101,8 +101,9 @@ public class Dispatcher {
       if (stopped) { return; }
       for (String name : endpoints.keySet()) {
         unregisterRpcEndpoint(name);
-        threadPool.shutdown();
       }
+      receivers.offer(PoisonPill);
+      threadPool.shutdown();
     }
   }
 
@@ -169,7 +170,7 @@ public class Dispatcher {
     }
   }
 
-  public boolean verfify(String name) {
+  public boolean verify(String name) {
     return endpoints.containsKey(name);
   }
 

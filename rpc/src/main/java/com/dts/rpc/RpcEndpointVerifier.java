@@ -22,7 +22,7 @@ public class RpcEndpointVerifier extends RpcEndpoint {
   @Override public void receiveAndReply(Object o, RpcCallContext context) {
     if (o instanceof CheckExistence) {
       CheckExistence msg = (CheckExistence)o;
-      context.reply(dispatcher.verfify(msg.name));
+      context.reply(dispatcher.verify(msg.name));
     }
   }
 

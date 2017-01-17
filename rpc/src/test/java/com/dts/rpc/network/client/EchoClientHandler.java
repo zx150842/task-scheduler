@@ -1,4 +1,4 @@
-package com.dts.rpc.client;
+package com.dts.rpc.network.client;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;

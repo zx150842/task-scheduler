@@ -9,8 +9,10 @@ import com.dts.rpc.network.server.RpcHandler;
 import com.dts.rpc.network.server.TransportChannelHandler;
 import com.dts.rpc.network.server.TransportRequestHandler;
 import com.dts.rpc.network.server.TransportServer;
+import com.dts.rpc.network.util.NettyUtils;
 import com.dts.rpc.network.util.TransportConf;
 
+import com.dts.rpc.network.util.TransportFrameDecoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +49,10 @@ public class TransportContext {
     return new TransportClientFactory(this);
   }
 
+  public TransportServer createServer() {
+    return createServer(0);
+  }
+
   public TransportServer createServer(int port) {
     return new TransportServer(this, null, port, rpcHandler);
   }
@@ -67,10 +73,12 @@ public class TransportContext {
       RpcHandler channelRpcHandler) {
     try {
       TransportChannelHandler channelHandler = createChannelHandler(channel, channelRpcHandler);
-      channel.pipeline().addLast("encoder", encoder).addLast("decoder", decoder)
-          .addLast("idleStateHandler",
-              new IdleStateHandler(0, 0, conf.connectionTimeoutMs() / 1000))
-          .addLast("handler", channelHandler);
+      channel.pipeline()
+        .addLast("encoder", encoder)
+        .addLast(TransportFrameDecoder.HANDLER_NAME, NettyUtils.createFrameDecoder())
+        .addLast("decoder", decoder)
+        .addLast("idleStateHandler", new IdleStateHandler(0, 0, conf.connectionTimeoutMs() / 1000))
+        .addLast("handler", channelHandler);
       return channelHandler;
     } catch (RuntimeException e) {
       logger.error("Error while initializing Netty pipeline", e);

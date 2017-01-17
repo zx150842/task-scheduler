@@ -77,9 +77,10 @@ public class ZooKeeperLeaderElectionAgent implements LeaderLatchListener {
   private void updateLeadershipStatus(boolean isLeader) {
     if (isLeader && status == LeadershipStatus.NOT_LEADER) {
       status = LeadershipStatus.LEADER;
-
+      master.electedLeader();
     } else if (!isLeader && status == LeadershipStatus.LEADER) {
       status = LeadershipStatus.NOT_LEADER;
+      master.revokedLeadership();
     }
   }
 

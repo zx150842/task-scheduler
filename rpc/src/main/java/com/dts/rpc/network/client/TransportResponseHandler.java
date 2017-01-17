@@ -37,6 +37,7 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
   }
 
   public void addRpcRequest(long requestId, RpcResponseCallback callback) {
+    updateTimeOfLastRequest();
     outstandingRpcs.put(requestId, callback);
   }
 
@@ -48,6 +49,7 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
     for (Map.Entry<Long, RpcResponseCallback> entry : outstandingRpcs.entrySet()) {
       entry.getValue().onFailure(cause);
     }
+    outstandingRpcs.clear();
   }
 
   @Override
@@ -94,8 +96,8 @@ public class TransportResponseHandler extends MessageHandler<ResponseMessage> {
       RpcFailure resp = (RpcFailure) message;
       RpcResponseCallback listener = outstandingRpcs.get(resp.requestId);
       if (listener == null) {
-        logger.warn("Ignoring response for RPC {} from {} ({} bytes) since it is not outstanding",
-            resp.requestId, remoteAddress, resp.body().size());
+        logger.warn("Ignoring response for RPC {} from {} ({}) since it is not outstanding",
+            resp.requestId, remoteAddress, resp.errorString);
       } else {
         outstandingRpcs.remove(resp.requestId);
         listener.onFailure(new RuntimeException(resp.errorString));

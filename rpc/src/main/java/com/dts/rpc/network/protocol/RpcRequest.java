@@ -3,6 +3,8 @@ package com.dts.rpc.network.protocol;
 import com.dts.rpc.network.buffer.ManagedBuffer;
 import com.dts.rpc.network.buffer.NettyManagedBuffer;
 
+import com.google.common.base.MoreObjects;
+import com.google.common.base.Objects;
 import io.netty.buffer.ByteBuf;
 
 /**
@@ -37,5 +39,27 @@ public final class RpcRequest extends AbstractMessage implements RequestMessage 
     long requestId = buf.readLong();
     buf.readInt();
     return new RpcRequest(requestId, new NettyManagedBuffer(buf.retain()));
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(requestId, body());
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    if (other instanceof RpcRequest) {
+      RpcRequest o = (RpcRequest)other;
+      return requestId == o.requestId && super.equals(o);
+    }
+    return false;
+  }
+
+  @Override
+  public String toString() {
+    return MoreObjects.toStringHelper(this)
+      .add("requestId", requestId)
+      .add("body", body())
+      .toString();
   }
 }

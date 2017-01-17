@@ -28,7 +28,7 @@ public class TransportConf {
     this.conf = conf;
     MODE_KEY = getConfKey("mode");
     PREFERDIRECTBUFS_KEY = getConfKey("preferDirectBufs");
-    CONNECTIONTIMEOUT_KEY = getConfKey("connectionTimeout");
+    CONNECTIONTIMEOUT_KEY = getConfKey("io.connectionTimeout");
     BACKLOG_KEY = getConfKey("backLog");
     NUMCONNNECTIONSPERPEER_KEY = getConfKey("numConnectionsPerPeer");
     SERVERTHREADS_KEY = getConfKey("serverThreads");
@@ -42,7 +42,7 @@ public class TransportConf {
   }
 
   private String getConfKey(String suffix) {
-    return module + "." + suffix;
+    return "dts." + module + "." + suffix;
   }
 
   public String ioMode() {

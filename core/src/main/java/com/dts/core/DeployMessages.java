@@ -70,17 +70,47 @@ public class DeployMessages {
     }
   }
 
-  public static class TaskResult {
-    public final String taskId;
-    public final TaskStatus status;
+  public static class SendHeartbeat {}
 
-    public TaskResult(String taskId, TaskStatus status) {
-      this.taskId = taskId;
-      this.status = status;
+  public static class LaunchedTask {
+    public final TaskInfo task;
+    public final String message;
+
+    public LaunchedTask(TaskInfo task, String message) {
+      this.task = task;
+      this.message = message;
     }
   }
 
-  public static class SendHeartbeat {}
+  public static class ExecutingTask {
+    public final TaskInfo task;
+    public final String executingThread;
+
+    public ExecutingTask(TaskInfo task, String executingThread) {
+      this.task = task;
+      this.executingThread = executingThread;
+    }
+  }
+
+  public static class FinishTask {
+    public final TaskInfo task;
+    public final String message;
+
+    public FinishTask(TaskInfo task, String message) {
+      this.task = task;
+      this.message = message;
+    }
+  }
+
+  public static class KilledTask {
+    public final TaskInfo task;
+    public final String message;
+
+    public KilledTask(TaskInfo task, String message) {
+      this.task = task;
+      this.message = message;
+    }
+  }
 
   // Master to Worker
 
@@ -118,13 +148,11 @@ public class DeployMessages {
     }
   }
 
-  public static class LaunchTaskAck {
+  public static class KillTask {
     public final TaskInfo task;
-    public final String workerId;
 
-    public LaunchTaskAck(TaskInfo task, String workerId) {
+    public KillTask(TaskInfo task) {
       this.task = task;
-      this.workerId = workerId;
     }
   }
 
@@ -162,10 +190,10 @@ public class DeployMessages {
   }
 
   public static class RegisterTask {
-    public final TaskInfo task;
+    public final TaskConf taskConf;
 
-    public RegisterTask(TaskInfo task) {
-      this.task = task;
+    public RegisterTask(TaskConf taskConf) {
+      this.taskConf = taskConf;
     }
   }
 
@@ -178,9 +206,9 @@ public class DeployMessages {
   }
 
   public static class UpdateTask {
-    public final TaskInfo task;
+    public final TaskConf taskConf;
 
-    public UpdateTask(TaskInfo task) { this.task = task; }
+    public UpdateTask(TaskConf taskConf) { this.taskConf = taskConf; }
   }
 
   public static class UpdateTaskGroup {
@@ -257,11 +285,27 @@ public class DeployMessages {
     }
   }
 
+  public static class RegisterTaskFailed {
+    public final String message;
+
+    public RegisterTaskFailed(String message) {
+      this.message = message;
+    }
+  }
+
   public static class RegisteredTaskGroup {
     public final String taskGroupId;
 
     public RegisteredTaskGroup(String taskGroupId) {
       this.taskGroupId = taskGroupId;
+    }
+  }
+
+  public static class RegisterTaskGroupFailed {
+    public final String message;
+
+    public RegisterTaskGroupFailed(String message) {
+      this.message = message;
     }
   }
 

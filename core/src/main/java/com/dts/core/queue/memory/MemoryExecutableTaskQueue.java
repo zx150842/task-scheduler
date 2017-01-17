@@ -48,9 +48,9 @@ public class MemoryExecutableTaskQueue implements ExecutableTaskQueue {
       lock.lock();
       oldTask = idToTasks.put(task.getId(), task);
       if (task.isManualTrigger()) {
-        workerGroupToManualTriggerTasks.put(task.getWorkerGroup(), task);
+        workerGroupToManualTriggerTasks.put(task.taskConf.getWorkerGroup(), task);
       } else {
-        workerGroupToAutoTriggerTasks.put(task.getWorkerGroup(), task);
+        workerGroupToAutoTriggerTasks.put(task.taskConf.getWorkerGroup(), task);
       }
     } finally {
       lock.unlock();
@@ -63,9 +63,9 @@ public class MemoryExecutableTaskQueue implements ExecutableTaskQueue {
     TaskInfo task = idToTasks.remove(id);
     if (task != null) {
       if (task.isManualTrigger()) {
-        workerGroupToManualTriggerTasks.removeAll(task.getWorkerGroup());
+        workerGroupToManualTriggerTasks.removeAll(task.taskConf.getWorkerGroup());
       } else {
-        workerGroupToAutoTriggerTasks.removeAll(task.getWorkerGroup());
+        workerGroupToAutoTriggerTasks.removeAll(task.taskConf.getWorkerGroup());
       }
     }
     return task != null;

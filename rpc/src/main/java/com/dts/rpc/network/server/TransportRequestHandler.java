@@ -53,6 +53,8 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
   public void handle(RequestMessage request) {
     if (request instanceof RpcRequest) {
       processRpcRequest((RpcRequest) request);
+    } else if (request instanceof OneWayMessage) {
+      processOneWayMessage((OneWayMessage) request);
     } else {
       throw new IllegalArgumentException("Unknown request type: " + request);
     }
@@ -71,9 +73,19 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
           respond(new RpcFailure(request.requestId, e.toString()));
         }
       });
-    } catch (IOException e) {
+    } catch (Exception e) {
       logger.error("Error while invoking RpcHandler#receive() on RPC id " + request.requestId, e);
       respond(new RpcFailure(request.requestId, Throwables.getStackTraceAsString(e)));
+    } finally {
+      request.body().release();
+    }
+  }
+
+  private void processOneWayMessage(OneWayMessage request) {
+    try {
+      rpcHandler.receive(reverseClient, request.body().nioByteBuffer());
+    } catch (Exception e) {
+      logger.error("Error while invoking RpcHandler#receive() for one-way message", e);
     } finally {
       request.body().release();
     }

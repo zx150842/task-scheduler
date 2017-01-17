@@ -17,6 +17,8 @@ subprojects {
         JSR305_VERSION = '3.0.1'
         CURATOR_VERSION = '3.2.1'
         SPRING_VERSION = '4.3.4.RELEASE'
+        MOCKITO_VERSION = '2.5.5'
+        NETTY_VERSION = '4.1.6.Final'
     }
 
     dependencies {
@@ -25,5 +27,6 @@ subprojects {
         compile group: 'org.apache.commons', name: 'commons-lang3', version: "$COMMONS_LANG_VERSION"
         compile group: 'com.google.code.findbugs', name: 'jsr305', version: "$JSR305_VERSION"
         testCompile group: 'junit', name: 'junit', version: '4+'
+        testCompile group: 'org.mockito', name: 'mockito-core', version: "$MOCKITO_VERSION"
     }
 }

@@ -4,7 +4,6 @@ import com.dts.core.TaskInfo;
 import com.dts.rpc.DTSConf;
 
 import java.util.List;
-import java.util.Set;
 
 /**
  * @author zhangxin
@@ -13,14 +12,14 @@ public class TaskScheduler {
 
   private final DTSConf conf;
   private final ExecutableTaskQueue executableTaskQueue;
-  private final ExecutingTaskQueue executingTaskQueue;
+  private final LaunchingTaskQueue launchingTaskQueue;
 
   public TaskScheduler(DTSConf conf,
     ExecutableTaskQueue executableTaskQueue,
-    ExecutingTaskQueue executingTaskQueue) {
+    LaunchingTaskQueue launchingTaskQueue) {
     this.conf = conf;
     this.executableTaskQueue = executableTaskQueue;
-    this.executingTaskQueue = executingTaskQueue;
+    this.launchingTaskQueue = launchingTaskQueue;
   }
 
   public TaskInfo schedule(String workerGroup) {
@@ -31,7 +30,7 @@ public class TaskScheduler {
     }
     tasks = executableTaskQueue.getAutoTriggerTasks(workerGroup);
     for (TaskInfo task : tasks) {
-      List<TaskInfo> runningTasks = executingTaskQueue.getByTaskId(task.getTaskId());
+      List<TaskInfo> runningTasks = launchingTaskQueue.getByTaskId(task.taskConf.getTaskId());
       if (runningTasks != null && runningTasks.size() > taskParallelRunNum) {
         continue;
       }

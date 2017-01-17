@@ -66,9 +66,11 @@ public class TransportServer implements Closeable {
     EventLoopGroup workerGroup = bossGroup;
     PooledByteBufAllocator allocator = NettyUtils
         .createPooledByteBufAllocator(conf.preferDirectBufs(), true, conf.serverThreads());
-    bootstrap = new ServerBootstrap().group(bossGroup, workerGroup)
-        .channel(NettyUtils.getServerChannel(ioMode)).option(ChannelOption.ALLOCATOR, allocator)
-        .childOption(ChannelOption.ALLOCATOR, allocator);
+    bootstrap = new ServerBootstrap()
+      .group(bossGroup, workerGroup)
+      .channel(NettyUtils.getServerChannel(ioMode))
+      .option(ChannelOption.ALLOCATOR, allocator)
+      .childOption(ChannelOption.ALLOCATOR, allocator);
 
     if (conf.backLog() > 0) {
       bootstrap.option(ChannelOption.SO_BACKLOG, conf.backLog());
@@ -92,7 +94,7 @@ public class TransportServer implements Closeable {
         host == null ? new InetSocketAddress(port) : new InetSocketAddress(host, port);
     channelFuture = bootstrap.bind(address);
     channelFuture.syncUninterruptibly();
-    port = ((InetSocketAddress) channelFuture.channel().localAddress()).getPort();
+    this.port = ((InetSocketAddress) channelFuture.channel().localAddress()).getPort();
     logger.debug("Server started on port: " + port);
   }
 

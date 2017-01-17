@@ -1,4 +1,4 @@
-package com.dts.rpc.server;
+package com.dts.rpc.network.server;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;

@@ -20,27 +20,35 @@ public class Inbox {
   private boolean stopped = false;
   private int numActiveThreads = 0;
 
+  private boolean enableConcurrent = false;
+
   public Inbox(NettyRpcEndpointRef endpointRef, RpcEndpoint endpoint) {
     this.endpointRef = endpointRef;
     this.endpoint = endpoint;
+
+    messages.add(new OnStart());
   }
 
   public void process(Dispatcher dispatcher) {
-    do {
-      InboxMessage message;
-      synchronized (this) {
-        message = messages.poll();
-        if (message != null) {
-          numActiveThreads++;
-        } else {
-          return;
-        }
+
+    InboxMessage message;
+    synchronized (this) {
+      if (!enableConcurrent && numActiveThreads != 0) {
+        return;
       }
+      message = messages.poll();
+      if (message != null) {
+        numActiveThreads++;
+      } else {
+        return;
+      }
+    }
+    while (true) {
       try {
         if (message instanceof RpcInboxMessage) {
           RpcInboxMessage msg = (RpcInboxMessage)message;
           try {
-            endpoint.receiveAndReply(msg.context);
+            endpoint.receiveAndReply(msg.content, msg.context);
           } catch (Throwable e) {
             msg.context.sendFailure(e);
             throw e;
@@ -50,6 +58,11 @@ public class Inbox {
           endpoint.receive(msg.content);
         } else if (message instanceof OnStart) {
           endpoint.onStart();
+          synchronized (this) {
+            if (!stopped) {
+              enableConcurrent = true;
+            }
+          }
         } else if (message instanceof OnStop) {
           int activeThreads;
           synchronized (this) {
@@ -76,11 +89,23 @@ public class Inbox {
           logger.error("Ignoring error", ee);
         }
       }
-    } while(true);
+      synchronized (this) {
+        if (!enableConcurrent && numActiveThreads != 1) {
+          numActiveThreads--;
+          return;
+        }
+        message = messages.poll();
+        if (message == null) {
+          numActiveThreads--;
+          return;
+        }
+      }
+    }
   }
 
   public synchronized void stop() {
     if (!stopped) {
+      enableConcurrent = false;
       stopped = true;
       messages.add(new OnStop());
     }
@@ -92,9 +117,13 @@ public class Inbox {
 
   public synchronized void post(InboxMessage message) {
     if (stopped) {
-      logger.warn("Drop {} because {} is stopped", message, endpointRef);
+      onDrop(message);
     } else {
       messages.add(message);
     }
+  }
+
+  protected void onDrop(InboxMessage message) {
+    logger.warn("Drop {} because {} is stopped", message, endpointRef);
   }
 }

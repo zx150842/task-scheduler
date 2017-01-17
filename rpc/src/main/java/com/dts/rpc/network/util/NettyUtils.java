@@ -1,5 +1,6 @@
 package com.dts.rpc.network.util;
 
+import java.lang.reflect.Field;
 import java.util.concurrent.*;
 
 import com.google.common.collect.Queues;
@@ -15,6 +16,7 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.sctp.nio.NioSctpChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.util.internal.PlatformDependent;
 
 /**
  * Created by zhangxin on 2016/11/26.
@@ -30,7 +32,19 @@ public class NettyUtils {
 
   public static PooledByteBufAllocator createPooledByteBufAllocator(boolean allowDirectBufs,
       boolean allowCache, int numCores) {
-    return new PooledByteBufAllocator();
+    if (numCores == 0) {
+      numCores = Runtime.getRuntime().availableProcessors();
+    }
+    return new PooledByteBufAllocator(
+      allowDirectBufs && PlatformDependent.directBufferPreferred(),
+      Math.min(getPrivateStaticField("DEFAULT_NUM_HEAP_ARENA"), numCores),
+      Math.min(getPrivateStaticField("DEFAULT_NUM_DIRECT_ARENA"), allowDirectBufs ? numCores : 0),
+      getPrivateStaticField("DEFAULT_PAGE_SIZE"),
+      getPrivateStaticField("DEFAULT_MAX_ORDER"),
+      allowCache ? getPrivateStaticField("DEFAULT_TINY_CACHE_SIZE") : 0,
+      allowCache ? getPrivateStaticField("DEFAULT_SMALL_CACHE_SIZE") : 0,
+      allowCache ? getPrivateStaticField("DEFAULT_NORMAL_CACHE_SIZE") : 0
+      );
   }
 
   public static EventLoopGroup createEventLoop(IOMode mode, int numThreads, String threadPrefix) {
@@ -41,7 +55,7 @@ public class NettyUtils {
       case EPOLL:
         return new EpollEventLoopGroup(numThreads, threadFactory);
       default:
-        throw new IllegalArgumentException("");
+        throw new IllegalArgumentException("Unknown to mode: " + mode);
     }
   }
 
@@ -74,6 +88,10 @@ public class NettyUtils {
     }
   }
 
+  public static TransportFrameDecoder createFrameDecoder() {
+    return new TransportFrameDecoder();
+  }
+
   public static Class<? extends Channel> getClientChannelClass(IOMode mode) {
     switch (mode) {
       case NIO:
@@ -82,6 +100,16 @@ public class NettyUtils {
         return EpollSocketChannel.class;
       default:
         throw new IllegalArgumentException("Unknown io mode: " + mode);
+    }
+  }
+
+  private static int getPrivateStaticField(String name) {
+    try {
+      Field f = PooledByteBufAllocator.DEFAULT.getClass().getDeclaredField(name);
+      f.setAccessible(true);
+      return f.getInt(null);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
   }
 }

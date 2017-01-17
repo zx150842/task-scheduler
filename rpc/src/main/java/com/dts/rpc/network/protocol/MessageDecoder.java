@@ -1,5 +1,6 @@
 package com.dts.rpc.network.protocol;
 
+import io.netty.channel.ChannelHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,6 +13,7 @@ import io.netty.handler.codec.MessageToMessageDecoder;
 /**
  * Created by zhangxin on 2016/11/27.
  */
+@ChannelHandler.Sharable
 public class MessageDecoder extends MessageToMessageDecoder<ByteBuf> {
   private final Logger logger = LoggerFactory.getLogger(MessageDecoder.class);
 
@@ -34,8 +36,10 @@ public class MessageDecoder extends MessageToMessageDecoder<ByteBuf> {
         return RpcResponse.decode(in);
       case RpcFailure:
         return RpcFailure.decode(in);
+      case OneWayMessage:
+        return OneWayMessage.decode(in);
       default:
-        throw new IllegalArgumentException("Unexpeted message type: " + msgType);
+        throw new IllegalArgumentException("Unexcepted message type: " + msgType);
     }
   }
 }

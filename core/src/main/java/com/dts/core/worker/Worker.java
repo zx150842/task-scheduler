@@ -1,5 +1,6 @@
 package com.dts.core.worker;
 
+import com.dts.core.TaskConf;
 import com.dts.core.TaskInfo;
 import com.dts.core.master.Master;
 import com.dts.core.util.ThreadUtils;
@@ -59,6 +60,10 @@ public class Worker extends RpcEndpoint {
   private int coresUsed = 0;
   private int memoryUsed = 0;
 
+  private final TaskDispatcher taskDispatcher;
+
+  private static final String ENDPOINT_NAME = "Worker";
+
   public Worker(NettyRpcEnv rpcEnv, DTSConf conf) {
     super(rpcEnv);
     this.rpcEnv = rpcEnv;
@@ -83,12 +88,14 @@ public class Worker extends RpcEndpoint {
     this.registerMasterThreadPool = ThreadUtils.newDaemonCachedThreadPool(
         "worker-register-master-threadpool", masterRpcAddresses.length, 60);
 
+    this.taskDispatcher = new TaskDispatcher(conf, self());
   }
 
   @Override
   public void onStart() {
     assert !registered;
     logger.info("Starting worker {}:{} with {} cores, {} RAM", host, port, cores, memory);
+    taskDispatcher.onStart();
     // TODO add metrics
   }
 
@@ -136,7 +143,7 @@ public class Worker extends RpcEndpoint {
       context.reply(new MasterChangeAckFromWorker(workerId, coresUsed, memoryUsed));
     }
 
-    else if (o instanceof WorkerLastestState) {
+    else if (o instanceof RequestWorkerState) {
       context.reply(new WorkerLastestState(workerId, coresUsed, memoryUsed));
     }
 
@@ -144,7 +151,29 @@ public class Worker extends RpcEndpoint {
       LaunchTask msg = (LaunchTask)o;
       TaskInfo task = msg.task;
       // TODO schedule task
-      context.reply(new LaunchTaskAck(task, workerId));
+      String message;
+      try {
+        if (taskDispatcher.addTask(task)) {
+          message = "success";
+        } else {
+          message = "Failed to add task to worker task queue";
+        }
+      } catch (Exception e) {
+        message = e.toString();
+      }
+      context.reply(new LaunchedTask(task, message));
+    }
+
+    else if (o instanceof KillTask) {
+      KillTask msg = (KillTask)o;
+      // TODO kill task
+      String message;
+      if (taskDispatcher.stopTask(msg.task.getId())) {
+        message = "success";
+      } else {
+        message = "Failed to stop task: " + msg.task;
+      }
+      context.reply(new KilledTask(msg.task, message));
     }
   }
 
@@ -302,4 +331,13 @@ public class Worker extends RpcEndpoint {
     }
     return futures.toArray(new Future[futures.size()]);
   }
+
+  private static NettyRpcEnv startRpcEnvAndEndpoint(
+    String host, int port, int cores, long memory,
+    String[] masterUrls, DTSConf conf) {
+    NettyRpcEnv rpcEnv = NettyRpcEnv.create(conf, host, port, true);
+    rpcEnv.setupEndpoint(ENDPOINT_NAME, new Worker(rpcEnv, conf));
+    return rpcEnv;
+  }
+
 }

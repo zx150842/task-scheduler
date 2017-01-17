@@ -55,6 +55,10 @@ public class TransportClientFactory implements Closeable {
         false, conf.clientThreads());
   }
 
+  public TransportClient createClient(String remoteHost, int remotePort) throws IOException {
+    return createClient(InetSocketAddress.createUnresolved(remoteHost, remotePort));
+  }
+
   public TransportClient createClient(InetSocketAddress address) throws IOException {
     Bootstrap bootstrap = new Bootstrap();
     bootstrap.group(workGroup).channel(NioSocketChannel.class)

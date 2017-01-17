@@ -1,6 +1,7 @@
 package com.dts.rpc.network.protocol;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToMessageEncoder;
 import org.slf4j.Logger;
@@ -9,8 +10,9 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 
 /**
- * Created by zhangxin on 2016/11/27.
+ * @author zhangxin
  */
+@ChannelHandler.Sharable
 public final class MessageEncoder extends MessageToMessageEncoder<Message> {
   private final Logger logger = LoggerFactory.getLogger(MessageEncoder.class);
 

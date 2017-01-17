@@ -2,7 +2,6 @@ package com.dts.core;
 
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 
 /**
  * @author zhangxin
@@ -11,7 +10,7 @@ public class TaskGroup {
   // task group的系统内部id
   private String id;
   // task group包含的task列表
-  private List<TaskInfo> tasks;
+  private List<TaskConf> tasks;
   // cron表达式
   private String cronExpression;
   // task提交到的worker组
@@ -35,11 +34,11 @@ public class TaskGroup {
     this.id = id;
   }
 
-  public List<TaskInfo> getTasks() {
+  public List<TaskConf> getTasks() {
     return tasks;
   }
 
-  public void setTasks(List<TaskInfo> tasks) {
+  public void setTasks(List<TaskConf> tasks) {
     this.tasks = tasks;
   }
 

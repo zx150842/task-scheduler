@@ -1,7 +1,6 @@
 package com.dts.core.queue;
 
-import com.dts.core.TaskInfo;
-import com.google.common.base.Preconditions;
+import com.dts.core.TaskConf;
 
 import java.util.List;
 
@@ -10,19 +9,27 @@ import java.util.List;
  */
 public interface CronTaskQueue {
 
-  boolean add(TaskInfo task);
+  boolean add(TaskConf task);
 
-  boolean update(TaskInfo task);
+  boolean update(TaskConf task);
 
   boolean remove(String taskId);
 
-  List<TaskInfo> getAllValid();
+  List<TaskConf> getAllValid();
 
-  boolean addBatch(List<TaskInfo> tasks);
+  boolean addBatch(List<TaskConf> tasks);
 
-  boolean updateBatch(List<TaskInfo> tasks);
+  boolean updateBatch(List<TaskConf> tasks);
 
   boolean removeBatch(List<String> taskIds);
 
   List<String> getTaskId(String taskGroupId);
+
+  boolean containTask(String taskId);
+
+  boolean containTaskGroup(String taskGroupId);
+
+  TaskConf getTask(String taskId);
+
+  List<TaskConf> getTasks(String taskGroupId);
 }

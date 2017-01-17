@@ -22,12 +22,13 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * @author zhangxin
  */
-public class NettyRpcEnv {
+public class NettyRpcEnv implements RpcEnv {
   private final Logger logger = LoggerFactory.getLogger(NettyRpcEnv.class);
 
   private final String host;
@@ -64,7 +65,7 @@ public class NettyRpcEnv {
 
   public void startServer(int port) {
     server = transportContext.createServer(host, port);
-//    dispatcher.registerRpcEndpoint()
+    dispatcher.registerRpcEndpoint(RpcEndpointVerifier.NAME, new RpcEndpointVerifier(this, dispatcher));
   }
 
   public DTSConf conf() {
@@ -81,7 +82,7 @@ public class NettyRpcEnv {
   public ThreadPoolExecutor clientConnectionExecutor() { return clientConnectionExecutor; }
 
   public TransportClient createClient(RpcAddress address) throws IOException {
-    return clientFactory.createClient(new InetSocketAddress(address.getHost(), address.getPort()));
+    return clientFactory.createClient(new InetSocketAddress(address.host, address.port));
   }
 
   public void removeOutbox(RpcAddress address) {
@@ -99,11 +100,13 @@ public class NettyRpcEnv {
     NettyRpcEndpointRef verifier = new NettyRpcEndpointRef(conf, new RpcEndpointAddress(address, RpcEndpointVerifier.NAME),this);
     Future future = verifier.ask(new RpcEndpointVerifier.CheckExistence(endpointName));
     try {
-      boolean verified = (boolean)future.get();
+      // TODO add timeout
+      boolean verified = (boolean)future.get(10, TimeUnit.SECONDS);
+      RpcEndpointAddress rpcEndpointAddress = new RpcEndpointAddress(address, endpointName);
       if (verified) {
-        return new NettyRpcEndpointRef(conf, new RpcEndpointAddress(address, endpointName), this);
+        return new NettyRpcEndpointRef(conf, rpcEndpointAddress, this);
       }
-      throw new RuntimeException("Cannot find endpoint: " + address);
+      throw new RuntimeException("Cannot find endpoint: " + rpcEndpointAddress);
     } catch (Throwable e) {
       throw new RuntimeException(e);
     }

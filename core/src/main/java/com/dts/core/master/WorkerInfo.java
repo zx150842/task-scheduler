@@ -12,16 +12,16 @@ public class WorkerInfo {
   public final String host;
   public final int port;
   public final int cores;
-  public final int memory;
+  public final long memory;
   public final RpcEndpointRef endpoint;
   public final String groupId;
 
   private WorkerState state;
   private int coresUsed;
-  private int memoryUsed;
+  private long memoryUsed;
   private long lastHeartbeat;
 
-  public WorkerInfo(String id, String host, int port, int cores, int memory, RpcEndpointRef endpoint, String groupId) {
+  public WorkerInfo(String id, String host, int port, int cores, long memory, RpcEndpointRef endpoint, String groupId) {
     this.id = id;
     this.host = host;
     this.port = port;
@@ -59,11 +59,11 @@ public class WorkerInfo {
     this.coresUsed = coresUsed;
   }
 
-  public int getMemoryUsed() {
+  public long getMemoryUsed() {
     return memoryUsed;
   }
 
-  public void setMemoryUsed(int memoryUsed) {
+  public void setMemoryUsed(long memoryUsed) {
     this.memoryUsed = memoryUsed;
   }
 

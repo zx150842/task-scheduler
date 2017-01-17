@@ -1,5 +1,7 @@
 package com.dts.core.util;
 
+import com.dts.core.worker.TaskThreadPoolExecutor;
+import com.dts.rpc.RpcEndpointRef;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import java.util.concurrent.*;
@@ -39,7 +41,13 @@ public class ThreadUtils {
     ThreadFactory threadFactory = namedThreadFactory(threadName);
     return Executors.newSingleThreadExecutor(threadFactory);
   }
-
+  
+  public static TaskThreadPoolExecutor newDaemonTaskThreadPool(int threadNum, String prefix, RpcEndpointRef endpoint) {
+    ThreadFactory threadFactory = namedThreadFactory(prefix);
+    return new TaskThreadPoolExecutor(threadNum, threadNum, 0, TimeUnit.MILLISECONDS,
+        new LinkedBlockingQueue<Runnable>(), threadFactory, endpoint);
+  }
+  
   public static ThreadFactory namedThreadFactory(String prefix) {
     return new ThreadFactoryBuilder().setDaemon(true).setNameFormat(prefix + "-%d").build();
   }

@@ -2,6 +2,8 @@ package com.dts.rpc.network.protocol;
 
 import com.dts.rpc.network.buffer.ManagedBuffer;
 
+import java.util.Objects;
+
 /**
  * @author zhangxin
  */
@@ -27,5 +29,9 @@ public abstract class AbstractMessage implements Message {
   @Override
   public boolean isBodyInFrame() {
     return isBodyInFrame;
+  }
+
+  protected boolean equals(AbstractMessage other) {
+    return isBodyInFrame == other.isBodyInFrame && Objects.equals(body, other.body);
   }
 }

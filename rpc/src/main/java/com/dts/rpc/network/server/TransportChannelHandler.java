@@ -108,7 +108,6 @@ public class TransportChannelHandler extends SimpleChannelInboundHandler<Message
           client.timeOut();
           ctx.close();
         }
-
       }
     }
     ctx.fireUserEventTriggered(evt);

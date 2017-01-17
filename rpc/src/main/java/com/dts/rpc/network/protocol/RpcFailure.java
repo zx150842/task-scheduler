@@ -1,5 +1,7 @@
 package com.dts.rpc.network.protocol;
 
+import com.google.common.base.MoreObjects;
+import com.google.common.base.Objects;
 import io.netty.buffer.ByteBuf;
 
 /**
@@ -34,5 +36,27 @@ public class RpcFailure extends AbstractMessage implements ResponseMessage {
     long requestId = buf.readLong();
     String errorString = Encoders.Strings.decode(buf);
     return new RpcFailure(requestId, errorString);
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(requestId, errorString);
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    if (other instanceof RpcFailure) {
+      RpcFailure o = (RpcFailure)other;
+      return requestId == o.requestId && errorString.equals(o.errorString);
+    }
+    return false;
+  }
+
+  @Override
+  public String toString() {
+    return MoreObjects.toStringHelper(this)
+      .add("requestId", requestId)
+      .add("errorString", errorString)
+      .toString();
   }
 }

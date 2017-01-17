@@ -1,6 +1,7 @@
 package com.dts.rpc.network.client;
 
-import com.dts.rpc.network.protocol.AskMessage;
+import com.dts.rpc.network.protocol.OneWayMessage;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Objects;
 import com.google.common.base.Throwables;
@@ -17,7 +18,6 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.SocketChannel;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -125,7 +125,7 @@ public class TransportClient implements Closeable {
   }
 
   public void send(ByteBuffer message) {
-    channel.writeAndFlush(new AskMessage(new NioManagedBuffer(message)));
+    channel.writeAndFlush(new OneWayMessage(new NioManagedBuffer(message)));
   }
 
   public void removeRpcRequest(long requestId) {
@@ -134,6 +134,11 @@ public class TransportClient implements Closeable {
 
   public void timeOut() {
     this.timedOut = true;
+  }
+
+  @VisibleForTesting
+  public TransportResponseHandler getHandler() {
+    return handler;
   }
 
   @Override
