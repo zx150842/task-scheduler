@@ -15,9 +15,9 @@ public abstract class RpcHandler {
   private static final RpcResponseCallback ONE_WAY_CALLBACK = new OneWayRpcCallback();
 
   public abstract void receive(TransportClient client, ByteBuffer message,
-      RpcResponseCallback callback);
+      RpcResponseCallback callback) throws Exception;
 
-  public void receive(TransportClient client, ByteBuffer message) {
+  public void receive(TransportClient client, ByteBuffer message) throws Exception {
     receive(client, message, ONE_WAY_CALLBACK);
   }
 

@@ -4,10 +4,12 @@ import com.dts.rpc.RpcAddress;
 import com.dts.rpc.RpcCallContext;
 import com.google.common.base.Objects;
 
+import java.io.Serializable;
+
 /**
  * @author zhangxin
  */
-abstract class InboxMessage {}
+abstract class InboxMessage implements Serializable {}
 
 class OnStart extends InboxMessage {}
 

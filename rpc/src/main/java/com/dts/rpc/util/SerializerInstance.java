@@ -1,6 +1,7 @@
 package com.dts.rpc.util;
 
 import com.dts.rpc.DTSConf;
+import com.dts.rpc.exception.DTSSerializeException;
 
 import java.io.*;
 import java.nio.ByteBuffer;
@@ -52,7 +53,7 @@ class SerializationStream {
     try {
       this.objOut = new ObjectOutputStream(out);
     } catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new DTSSerializeException(e);
     }
   }
 
@@ -64,7 +65,7 @@ class SerializationStream {
         counter = 0;
       }
     } catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new DTSSerializeException(e);
     }
     return this;
   }
@@ -73,7 +74,7 @@ class SerializationStream {
     try {
       objOut.flush();
     } catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new DTSSerializeException(e);
     }
   }
 
@@ -81,7 +82,7 @@ class SerializationStream {
     try {
       objOut.close();
     } catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new DTSSerializeException(e);
     }
   }
 }
@@ -96,7 +97,7 @@ class DeserializationStream {
     try {
       this.objIn = new ObjectInputStream(in);
     } catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new DTSSerializeException(e);
     }
   }
 
@@ -104,7 +105,7 @@ class DeserializationStream {
     try {
       return (T) objIn.readObject();
     } catch (IOException | ClassNotFoundException e) {
-      throw new RuntimeException(e);
+      throw new DTSSerializeException(e);
     }
   }
 
@@ -112,7 +113,7 @@ class DeserializationStream {
     try {
       objIn.close();
     } catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new DTSSerializeException(e);
     }
   }
 }

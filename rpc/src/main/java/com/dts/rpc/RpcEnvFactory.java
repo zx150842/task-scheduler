@@ -5,5 +5,5 @@ package com.dts.rpc;
  */
 public interface RpcEnvFactory {
 
-  RpcEnv create(DTSConf conf, String host, int port, boolean clientMode);
+  RpcEnv create(RpcEnvConfig rpcEnvConfig);
 }

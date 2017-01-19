@@ -3,6 +3,7 @@ package com.dts.rpc.netty;
 import com.dts.rpc.RpcAddress;
 import com.dts.rpc.RpcCallContext;
 import com.dts.rpc.network.client.RpcResponseCallback;
+import com.dts.rpc.network.protocol.RpcFailure;
 import com.google.common.util.concurrent.SettableFuture;
 
 import java.nio.ByteBuffer;

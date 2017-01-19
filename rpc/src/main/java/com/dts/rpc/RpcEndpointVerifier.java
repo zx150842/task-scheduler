@@ -1,7 +1,10 @@
 package com.dts.rpc;
 
+import com.dts.rpc.exception.DTSException;
 import com.dts.rpc.netty.Dispatcher;
 import com.dts.rpc.netty.NettyRpcEnv;
+
+import java.io.Serializable;
 
 /**
  * @author zhangxin
@@ -16,7 +19,7 @@ public class RpcEndpointVerifier extends RpcEndpoint {
   }
 
   @Override public void receive(Object o) {
-    throw new RuntimeException("RpcEndpointVerfier does not implement 'receive'");
+    throw new DTSException("RpcEndpointVerfier does not implement 'receive'");
   }
 
   @Override public void receiveAndReply(Object o, RpcCallContext context) {
@@ -26,7 +29,7 @@ public class RpcEndpointVerifier extends RpcEndpoint {
     }
   }
 
-  public static class CheckExistence {
+  public static class CheckExistence implements Serializable {
     public final String name;
 
     public CheckExistence(String name) {

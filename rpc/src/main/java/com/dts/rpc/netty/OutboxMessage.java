@@ -2,7 +2,9 @@ package com.dts.rpc.netty;
 
 import com.dts.rpc.network.client.RpcResponseCallback;
 import com.dts.rpc.network.client.TransportClient;
+import com.dts.rpc.util.SerializerInstance;
 import com.google.common.util.concurrent.SettableFuture;
+import io.netty.buffer.Unpooled;
 
 import java.nio.ByteBuffer;
 
@@ -15,7 +17,6 @@ abstract class OutboxMessage {
 
   public abstract void onFailure(Throwable e);
 }
-
 
 class OneWayOutboxMessage extends OutboxMessage {
 
@@ -36,16 +37,17 @@ class OneWayOutboxMessage extends OutboxMessage {
   }
 }
 
-
 class RpcOutboxMessage extends OutboxMessage implements RpcResponseCallback {
 
+  private final SerializerInstance serializerInstance;
   private final ByteBuffer content;
   private final SettableFuture future;
 
   private TransportClient client;
   private long requestId;
 
-  public RpcOutboxMessage(ByteBuffer content, SettableFuture future) {
+  public RpcOutboxMessage(SerializerInstance serializerInstance, ByteBuffer content, SettableFuture future) {
+    this.serializerInstance = serializerInstance;
     this.content = content;
     this.future = future;
   }
@@ -63,6 +65,11 @@ class RpcOutboxMessage extends OutboxMessage implements RpcResponseCallback {
 
   @Override
   public void onSuccess(ByteBuffer response) {
-    future.set(response);
+    Object obj = serializerInstance.deserialize(response);
+    if (obj instanceof Throwable) {
+      future.setException((Throwable)obj);
+    } else {
+      future.set(obj);
+    }
   }
 }

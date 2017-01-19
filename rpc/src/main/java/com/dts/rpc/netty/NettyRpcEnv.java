@@ -1,6 +1,7 @@
 package com.dts.rpc.netty;
 
 import com.dts.rpc.*;
+import com.dts.rpc.exception.DTSException;
 import com.dts.rpc.network.TransportContext;
 import com.dts.rpc.network.client.TransportClient;
 import com.dts.rpc.network.client.TransportClientFactory;
@@ -12,12 +13,14 @@ import com.dts.rpc.util.SerializerInstance;
 import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.SettableFuture;
 
+import io.netty.buffer.Unpooled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -50,6 +53,9 @@ public class NettyRpcEnv implements RpcEnv {
 
   private RpcAddress address = null;
 
+  private static ThreadLocal<NettyRpcEnv> nettyRpcEnvTL = new InheritableThreadLocal<>();
+  private static ThreadLocal<TransportClient> clientTL = new InheritableThreadLocal<>();
+
   NettyRpcEnv(DTSConf conf, SerializerInstance serializerInstance, String host) {
     this.host = host;
     this.conf = conf;
@@ -63,9 +69,18 @@ public class NettyRpcEnv implements RpcEnv {
     this.clientFactory = transportContext.createClientFactory();
   }
 
+  public static NettyRpcEnv currentEnv() {
+    return nettyRpcEnvTL.get();
+  }
+
+  public static TransportClient currentClient() {
+    return clientTL.get();
+  }
+
   public void startServer(int port) {
     server = transportContext.createServer(host, port);
     dispatcher.registerRpcEndpoint(RpcEndpointVerifier.NAME, new RpcEndpointVerifier(this, dispatcher));
+    nettyRpcEnvTL.set(this);
   }
 
   public DTSConf conf() {
@@ -82,7 +97,9 @@ public class NettyRpcEnv implements RpcEnv {
   public ThreadPoolExecutor clientConnectionExecutor() { return clientConnectionExecutor; }
 
   public TransportClient createClient(RpcAddress address) throws IOException {
-    return clientFactory.createClient(new InetSocketAddress(address.host, address.port));
+    TransportClient client = clientFactory.createClient(new InetSocketAddress(address.host, address.port));
+    clientTL.set(client);
+    return client;
   }
 
   public void removeOutbox(RpcAddress address) {
@@ -101,14 +118,14 @@ public class NettyRpcEnv implements RpcEnv {
     Future future = verifier.ask(new RpcEndpointVerifier.CheckExistence(endpointName));
     try {
       // TODO add timeout
-      boolean verified = (boolean)future.get(10, TimeUnit.SECONDS);
+      boolean verified = (boolean)future.get(100000, TimeUnit.SECONDS);
       RpcEndpointAddress rpcEndpointAddress = new RpcEndpointAddress(address, endpointName);
       if (verified) {
         return new NettyRpcEndpointRef(conf, rpcEndpointAddress, this);
       }
-      throw new RuntimeException("Cannot find endpoint: " + rpcEndpointAddress);
+      throw new DTSException("Cannot find endpoint: " + rpcEndpointAddress);
     } catch (Throwable e) {
-      throw new RuntimeException(e);
+      throw new DTSException(e);
     }
   }
 
@@ -124,11 +141,16 @@ public class NettyRpcEnv implements RpcEnv {
     return dispatcher.getRpcEndpointRef(endpoint);
   }
 
+  public void stop(RpcEndpointRef endpointRef) {
+    assert endpointRef instanceof NettyRpcEndpointRef;
+    dispatcher.stop(endpointRef);
+  }
+
   public void shutdown() {
     try {
       cleanup();
     } catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new DTSException(e);
     }
   }
 
@@ -145,14 +167,14 @@ public class NettyRpcEnv implements RpcEnv {
     }
   }
 
-  public <T> Future<T> ask(RpcRequestMessage message, long timeoutMs) {
+  public <T> Future<T> ask(RpcRequestMessage message) {
     SettableFuture<T> future = SettableFuture.create();
     RpcAddress remoteAddr = message.receiver.address();
     try {
       if (remoteAddr == address()) {
         dispatcher.postLocalMessage(message, future);
       } else {
-        RpcOutboxMessage rpcMessage = new RpcOutboxMessage(serialize(message), future);
+        RpcOutboxMessage rpcMessage = new RpcOutboxMessage(serializerInstance, serialize(message), future);
         postToOutbox(message.receiver, rpcMessage);
       }
     } catch (Throwable e) {
@@ -161,13 +183,12 @@ public class NettyRpcEnv implements RpcEnv {
     return future;
   }
 
-
   private void postToOutbox(NettyRpcEndpointRef receiver, OutboxMessage message) {
     if (receiver.client() != null) {
       message.sendWith(receiver.client());
     } else {
       if (receiver.address() == null) {
-        throw new RuntimeException("");
+        throw new DTSException("Cannot send message to client endpoint with no listen address");
       }
       Outbox targetOutbox;
       Outbox outbox = outboxes.get(receiver.address());
@@ -192,7 +213,7 @@ public class NettyRpcEnv implements RpcEnv {
   }
 
   private void cleanup() throws IOException {
-    if (stopped.compareAndSet(false, true)) {
+    if (!stopped.compareAndSet(false, true)) {
       return;
     }
     for (RpcAddress rpcAddress : outboxes.keySet()) {

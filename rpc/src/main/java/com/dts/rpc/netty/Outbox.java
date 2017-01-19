@@ -1,6 +1,7 @@
 package com.dts.rpc.netty;
 
 import com.dts.rpc.RpcAddress;
+import com.dts.rpc.exception.DTSException;
 import com.dts.rpc.network.client.TransportClient;
 import com.google.common.collect.Lists;
 
@@ -20,18 +21,16 @@ public class Outbox {
   private TransportClient client = null;
   private boolean stopped = false;
   private Future connectFuture = null;
-  private Outbox outbox;
   private boolean draining = false;
 
   public Outbox(NettyRpcEnv nettyRpcEnv, RpcAddress rpcAddress) {
     this.nettyRpcEnv = nettyRpcEnv;
     this.rpcAddress = rpcAddress;
-    this.outbox = this;
   }
 
   public void send(OutboxMessage message) {
     boolean dropped;
-    synchronized (outbox) {
+    synchronized (this) {
       if (stopped) {
         dropped = true;
       } else {
@@ -40,14 +39,15 @@ public class Outbox {
       }
     }
     if (dropped) {
-      message.onFailure(new RuntimeException("Message is dropped because Outbox is stopped"));
+      message.onFailure(new DTSException("Message is dropped because Outbox is stopped"));
     } else {
       drainOutbox();
     }
   }
 
   private void drainOutbox() {
-    synchronized (outbox) {
+    OutboxMessage message;
+    synchronized (this) {
       if (stopped) {
         return;
       }
@@ -61,13 +61,13 @@ public class Outbox {
       if (draining) {
         return;
       }
-      draining = true;
-    }
-    do {
-      OutboxMessage message = messages.poll();
+      message = messages.poll();
       if (message == null) {
         return;
       }
+      draining = true;
+    }
+    while (true) {
       try {
         synchronized (client) {
           if (client != null) {
@@ -80,34 +80,40 @@ public class Outbox {
         handleNetworkFailure(e);
         return;
       }
-      synchronized (outbox) {
+      synchronized (this) {
         if (stopped) {
           return;
         }
+        message = messages.poll();
+        if (message == null) {
+          draining = false;
+          return;
+        }
       }
-    } while (true);
+    }
   }
 
   private void launchConnectTask() {
+    Outbox outbox = this;
     connectFuture = nettyRpcEnv.clientConnectionExecutor().submit(new Callable<Void>() {
       @Override
       public Void call() {
         try {
           TransportClient client = nettyRpcEnv.createClient(rpcAddress);
-          synchronized (outbox) {
+          synchronized (this) {
             outbox.client = client;
             if (stopped) {
               closeClient();
             }
           }
         } catch (IOException e) {
-          synchronized (outbox) {
+          synchronized (this) {
             connectFuture = null;
           }
           handleNetworkFailure(e);
           return null;
         }
-        synchronized (outbox) {
+        synchronized (this) {
           connectFuture = null;
         }
         drainOutbox();
@@ -117,7 +123,7 @@ public class Outbox {
   }
 
   private void handleNetworkFailure(Throwable e) {
-    synchronized (outbox) {
+    synchronized (this) {
       assert connectFuture == null;
       if (stopped) {
         return;
@@ -135,7 +141,7 @@ public class Outbox {
   }
 
   public void stop() {
-    synchronized (outbox) {
+    synchronized (this) {
       if (stopped) {
         return;
       }
@@ -145,11 +151,11 @@ public class Outbox {
         closeClient();
       }
     }
-    OutboxMessage message;
-    do {
+    OutboxMessage message = messages.poll();
+    while (message != null) {
+      message.onFailure(new DTSException("Message is dropped because Outbox is stopped"));
       message = messages.poll();
-      message.onFailure(new RuntimeException("Message is dropped because Outbox is stopped"));
-    } while (message != null);
+    }
   }
 
   private synchronized void closeClient() {

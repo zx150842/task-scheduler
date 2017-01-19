@@ -44,7 +44,7 @@ public class NettyRpcHandler extends RpcHandler {
   private RpcRequestMessage internalReceive(TransportClient client, ByteBuffer message) {
     InetSocketAddress address = (InetSocketAddress) client.getChannel().remoteAddress();
     assert address != null;
-    RpcAddress clientAddress = new RpcAddress(address.getHostString(), address.getPort());
+    RpcAddress clientAddress = new RpcAddress(address.getAddress().getHostAddress(), address.getPort());
     RpcRequestMessage requestMessage = (RpcRequestMessage) nettyRpcEnv.deserialize(client, message);
     if (requestMessage.senderAddress == null) {
       return new RpcRequestMessage(clientAddress, requestMessage.receiver, requestMessage.content);
@@ -61,7 +61,7 @@ public class NettyRpcHandler extends RpcHandler {
   public void exceptionCaught(Throwable cause, TransportClient client) {
     InetSocketAddress address = (InetSocketAddress) client.getChannel().remoteAddress();
     if (address != null) {
-      RpcAddress clientAddr = new RpcAddress(address.getHostName(), address.getPort());
+      RpcAddress clientAddr = new RpcAddress(address.getAddress().getHostAddress(), address.getPort());
       dispatcher.postToAll(new RemoteProcessConnectionError(cause, clientAddr));
       RpcAddress remoteEnvAddress = remoteAddresses.get(clientAddr);
       if (remoteEnvAddress != null) {
@@ -76,7 +76,7 @@ public class NettyRpcHandler extends RpcHandler {
   public void channelActive(TransportClient client) {
     InetSocketAddress address = (InetSocketAddress) client.getChannel().remoteAddress();
     assert address != null;
-    RpcAddress clientAddr = new RpcAddress(address.getHostName(), address.getPort());
+    RpcAddress clientAddr = new RpcAddress(address.getAddress().getHostAddress(), address.getPort());
     dispatcher.postToAll(new RemoteProcessConnected(clientAddr));
   }
 
@@ -84,7 +84,7 @@ public class NettyRpcHandler extends RpcHandler {
   public void channelInactive(TransportClient client) {
     InetSocketAddress address = (InetSocketAddress) client.getChannel().remoteAddress();
     if (address != null) {
-      RpcAddress clientAddr = new RpcAddress(address.getHostName(), address.getPort());
+      RpcAddress clientAddr = new RpcAddress(address.getAddress().getHostAddress(), address.getPort());
       nettyRpcEnv.removeOutbox(clientAddr);
       dispatcher.postToAll(new RemoteProcessDisconnected(clientAddr));
       RpcAddress remoteEnvAddress = remoteAddresses.remove(clientAddr);

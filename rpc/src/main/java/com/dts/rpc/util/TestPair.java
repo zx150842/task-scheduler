@@ -1,6 +1,8 @@
 package com.dts.rpc.util;
 
+import com.google.common.base.Objects;
 import org.apache.commons.lang3.tuple.Pair;
+
 
 /**
  * @author zhangxin
@@ -29,5 +31,19 @@ public class TestPair<L, R> extends Pair {
 
   @Override public Object setValue(Object value) {
     throw new RuntimeException("TestPair.setValue method is not implement");
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hashCode(left, right);
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    if (other instanceof TestPair) {
+      TestPair o = (TestPair) other;
+      return left.equals(o.left) && right.equals(o.right);
+    }
+    return false;
   }
 }

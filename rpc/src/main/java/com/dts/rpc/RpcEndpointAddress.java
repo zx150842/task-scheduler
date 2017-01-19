@@ -1,9 +1,11 @@
 package com.dts.rpc;
 
+import java.io.Serializable;
+
 /**
  * @author zhangxin
  */
-public class RpcEndpointAddress {
+public class RpcEndpointAddress implements Serializable {
 
   private final RpcAddress rpcAddress;
   private final String name;

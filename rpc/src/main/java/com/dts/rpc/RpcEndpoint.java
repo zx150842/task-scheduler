@@ -13,9 +13,13 @@ public abstract class RpcEndpoint {
     this.rpcEnv = rpcEnv;
   }
 
-  public abstract void receive(Object o);
+  public void receive(Object o) {
+    throw new RuntimeException(self() + " does not implement 'receive'");
+  }
 
-  public abstract void receiveAndReply(Object o, RpcCallContext context);
+  public void receiveAndReply(Object o, RpcCallContext context) throws Exception {
+    throw new RuntimeException(self() + " does not implement 'receiveAndReply'");
+  }
 
   public void onError(Throwable cause) throws Throwable { throw cause; }
 
@@ -28,6 +32,13 @@ public abstract class RpcEndpoint {
   public void onStart() {}
 
   public void onStop() {}
+
+  public final void stop() {
+    RpcEndpointRef self = self();
+    if (self != null) {
+      rpcEnv.stop(self);
+    }
+  }
 
   protected RpcEndpointRef self() {
     Preconditions.checkNotNull(rpcEnv, "rpcEnv has not been initialized");

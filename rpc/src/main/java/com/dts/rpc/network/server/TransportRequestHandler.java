@@ -70,7 +70,7 @@ public class TransportRequestHandler extends MessageHandler<RequestMessage> {
 
         @Override
         public void onFailure(Throwable e) {
-          respond(new RpcFailure(request.requestId, e.toString()));
+          respond(new RpcFailure(request.requestId, Throwables.getStackTraceAsString(e)));
         }
       });
     } catch (Exception e) {

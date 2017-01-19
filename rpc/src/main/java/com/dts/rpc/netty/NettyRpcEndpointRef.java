@@ -7,6 +7,9 @@ import com.google.common.base.Preconditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.util.concurrent.Future;
 
@@ -16,10 +19,12 @@ import java.util.concurrent.Future;
 public class NettyRpcEndpointRef extends RpcEndpointRef implements Serializable {
   private final Logger logger = LoggerFactory.getLogger(NettyRpcEndpointRef.class);
 
-  private final RpcEndpointAddress endpointAddress;
-  private final NettyRpcEnv nettyRpcEnv;
-  private final RpcAddress address;
-  private TransportClient client;
+  private RpcEndpointAddress endpointAddress;
+  transient private NettyRpcEnv nettyRpcEnv;
+  private RpcAddress address;
+  transient private TransportClient client;
+
+  public NettyRpcEndpointRef() {}
 
   public NettyRpcEndpointRef(DTSConf conf, RpcEndpointAddress endpointAddress,
       NettyRpcEnv nettyRpcEnv) {
@@ -32,6 +37,16 @@ public class NettyRpcEndpointRef extends RpcEndpointRef implements Serializable 
   @Override
   public RpcAddress address() {
     return endpointAddress.getRpcAddress();
+  }
+
+  private void readObject(ObjectInputStream in) throws Exception {
+    in.defaultReadObject();
+    nettyRpcEnv = NettyRpcEnv.currentEnv();
+    client = NettyRpcEnv.currentClient();
+  }
+
+  private void writeObject(ObjectOutputStream out) throws IOException {
+    out.defaultWriteObject();
   }
 
   @Override
@@ -53,9 +68,9 @@ public class NettyRpcEndpointRef extends RpcEndpointRef implements Serializable 
     nettyRpcEnv.send(new RpcRequestMessage(nettyRpcEnv.address(), this, message));
   }
 
-  public <T> Future<T> ask(Object message, long timeoutMs) {
+  public <T> Future<T> ask(Object message) {
     RpcRequestMessage rpcMessage = new RpcRequestMessage(nettyRpcEnv.address(), this, message);
-    return nettyRpcEnv.ask(rpcMessage, timeoutMs);
+    return nettyRpcEnv.ask(rpcMessage);
   }
 
   @Override

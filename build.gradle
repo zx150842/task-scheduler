@@ -11,7 +11,7 @@ subprojects {
     }
 
     ext {
-        SLF4J_VERSION = '1.7.21'
+        SLF4J_VERSION = '1.7.22'
         GUAVA_VERSION = '20.0'
         COMMONS_LANG_VERSION = '3.5'
         JSR305_VERSION = '3.0.1'
@@ -22,7 +22,7 @@ subprojects {
     }
 
     dependencies {
-        compile group: 'org.slf4j', name: 'slf4j-api', version: "$SLF4J_VERSION"
+        compile group: 'org.slf4j', name: 'slf4j-log4j12', version: "$SLF4J_VERSION"
         compile group: 'com.google.guava', name: 'guava', version: "$GUAVA_VERSION"
         compile group: 'org.apache.commons', name: 'commons-lang3', version: "$COMMONS_LANG_VERSION"
         compile group: 'com.google.code.findbugs', name: 'jsr305', version: "$JSR305_VERSION"

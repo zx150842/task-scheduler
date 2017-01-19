@@ -1,6 +1,6 @@
 package com.dts.rpc;
 
-import com.dts.rpc.netty.NettyRpcEnv;
+import com.dts.rpc.exception.DTSException;
 import org.slf4j.Logger;
 
 import java.util.concurrent.ExecutionException;
@@ -13,14 +13,16 @@ import java.util.concurrent.TimeoutException;
  */
 public abstract class RpcEndpointRef {
 
-  protected final int maxRetries;
-  protected final long retryWaitMs;
+  protected int maxRetries;
+  protected long retryWaitMs;
   protected long defaultAskTimeoutMs;
 
+  public RpcEndpointRef() {}
+
   public RpcEndpointRef(DTSConf conf) {
-    this.maxRetries = conf.getInt("master.rpc.maxRetries", 3);
-    this.retryWaitMs = conf.getLong("master.rpc.maxWaitMs", 3000);
-    this.defaultAskTimeoutMs = conf.getLong("master.rpc.askTimeoutMs", 120 * 1000);
+    this.maxRetries = conf.getInt("dts.rpc.numRetries", 3);
+    this.retryWaitMs = conf.getLong("dts.rpc.retry.waitTimeMs", 3000);
+    this.defaultAskTimeoutMs = conf.getLong("dts.rpc.askTimeoutMs", 120 * 1000);
   }
 
   public abstract RpcAddress address();
@@ -28,21 +30,21 @@ public abstract class RpcEndpointRef {
 
   public abstract void send(Object message);
 
-  public abstract <T> Future<T> ask(Object message, long timeoutMs);
-
-  public <T> Future<T> ask(Object message) {
-    return ask(message, defaultAskTimeoutMs);
-  }
+  public abstract  <T> Future<T> ask(Object message);
 
   protected abstract Logger logger();
 
-  public <T> Object askWithRetry(Object message, long timeoutMs) {
+  public <T> T askWithRetry(Object message) {
+    return askWithRetry(message, defaultAskTimeoutMs);
+  }
+
+  public <T> T askWithRetry(Object message, long timeoutMs) {
     int attempts = 0;
     Exception lastException = null;
     while (attempts < maxRetries) {
       ++attempts;
       try {
-        Future<T> future = ask(message, timeoutMs);
+        Future<T> future = ask(message);
         T result = future.get(timeoutMs, TimeUnit.MILLISECONDS);
         if (result == null) {
           throw new RuntimeException("RpcEndpoint returned null");
@@ -62,6 +64,6 @@ public abstract class RpcEndpointRef {
         }
       }
     }
-    throw new RuntimeException("Error sending message " + message, lastException);
+    throw new DTSException("Error sending message " + message, lastException);
   }
 }

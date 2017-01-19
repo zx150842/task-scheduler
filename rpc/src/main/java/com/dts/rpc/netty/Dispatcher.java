@@ -4,7 +4,10 @@ import com.dts.rpc.RpcCallContext;
 import com.dts.rpc.RpcEndpoint;
 import com.dts.rpc.RpcEndpointAddress;
 import com.dts.rpc.RpcEndpointRef;
+import com.dts.rpc.exception.DTSException;
 import com.dts.rpc.network.client.RpcResponseCallback;
+import com.dts.rpc.network.util.NettyUtils;
+import com.dts.rpc.util.ThreadUtils;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
 import com.google.common.util.concurrent.SettableFuture;
@@ -43,11 +46,9 @@ public class Dispatcher {
 
     this.nettyRpcEnv = nettyRpcEnv;
 
-    int numThreads = nettyRpcEnv.conf().getInt("master.rpc.netty.dispatcher.numThreads",
+    int numThreads = nettyRpcEnv.conf().getInt("dts.rpc.netty.dispatcher.numThreads",
       Math.max(2, Runtime.getRuntime().availableProcessors()));
-    ThreadFactory threadFactory = new ThreadFactoryBuilder().setDaemon(true)
-      .setNameFormat("dispatcher-event-loop-%d").build();
-    this.threadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(numThreads, threadFactory);
+    this.threadPool = ThreadUtils.newDaemonFixedThreadPool(numThreads, "dispatcher-event-loop");
     for (int i = 0; i < numThreads; ++i) {
       threadPool.execute(new MessageLoop());
     }
@@ -65,6 +66,8 @@ public class Dispatcher {
           }
           data.inbox.process(Dispatcher.this);
         } catch (InterruptedException e) {
+          // exit
+        } catch (Throwable e) {
           logger.error(e.getMessage(), e);
         }
       }
@@ -151,7 +154,7 @@ public class Dispatcher {
       if (stopped) {
         error = new IllegalStateException("RpcEnv already stopped");
       } else if (data == null) {
-        error = new RuntimeException("Could not find " + endpointName);
+        error = new DTSException("Could not find " + endpointName);
       } else {
         data.inbox.post(message);
         receivers.offer(data);
@@ -166,7 +169,7 @@ public class Dispatcher {
     try {
       threadPool.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
     } catch (InterruptedException e) {
-      throw new RuntimeException(e);
+      throw new DTSException(e);
     }
   }
 
