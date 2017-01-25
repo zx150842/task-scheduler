@@ -18,6 +18,7 @@ import com.dts.rpc.util.SerializerInstance;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import org.apache.curator.x.discovery.ServiceInstance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,7 +90,7 @@ public class Master extends RpcEndpoint {
 
     sendTaskToWorkTask = sendTaskToWorkThread.scheduleAtFixedRate(new Runnable() {
       @Override public void run() {
-        for (String workerGroup : workerGroups.keySet()) {
+        for (String workerGroup : _workerGroups.keySet()) {
           schedule(workerGroup);
         }
       }
@@ -315,7 +316,6 @@ public class Master extends RpcEndpoint {
     _addressToWorker.remove(worker.endpoint.address());
   }
 
-  // TODO 增加缺少的worker， 删除不存在的worker
   private void syncZKWorkers() {
     Set<String> groups = registerClient.getAllServiceName();
     try {
@@ -324,38 +324,15 @@ public class Master extends RpcEndpoint {
         // 删除不存在的worker group
         for (String workerGroup : _workerGroups.keySet()) {
           if (!groups.contains(workerGroup)) {
-            _workerGroups.remove(workerGroup);
-            for (WorkerInfo workerInfo : _idToWorker.values()) {
-              if (workerGroup.equals(workerInfo.groupId)) {
-                _idToWorker.remove(workerInfo.id);
-              }
-            }
-            for (WorkerInfo workerInfo : _addressToWorker.values()) {
-              if (workerGroup.equals(workerInfo.groupId)) {
-                _addressToWorker.remove(workerInfo.endpoint.address());
-              }
-            }
+            unregisterWorkerGroup(workerGroup);
           }
         }
         for (String workerGroup : groups) {
           List<RpcRegisterMessage> messages = registerClient.getByServiceName(workerGroup);
           if (messages == null || messages.isEmpty()) {
-            
+            unregisterWorkerGroup(workerGroup);
           }
-          for (RpcRegisterMessage message : messages) {
-            String workerId = message.detail.getWorkerId();
-            if (_idToWorker.containsKey(workerId) && _addressToWorker.containsKey(message.address)
-              && _idToWorker.get(workerId) == _addressToWorker.get(message.address)) {
-              // do nothing
-            } else {
-              RpcEndpointRef workerRef = new NettyRpcEndpointRef(conf, new RpcEndpointAddress(message.address, Worker.ENDPOINT_NAME),
-                (NettyRpcEnv) rpcEnv);
-              WorkerInfo workerInfo = new WorkerInfo(workerId, message.detail.getWorkerGroup(), workerRef);
-              _idToWorker.put(workerId, workerInfo);
-              _addressToWorker.put(message.address, workerInfo);
-              //          List<WorkerInfo>
-            }
-          }
+          syncWorkerGroup(workerGroup, messages);
         }
       }
     } finally {
@@ -365,6 +342,51 @@ public class Master extends RpcEndpoint {
     }
   }
 
+  // 这个类要首先获取锁
+  private void unregisterWorkerGroup(String workerGroup) {
+    _workerGroups.remove(workerGroup);
+    for (WorkerInfo workerInfo : _idToWorker.values()) {
+      if (workerGroup.equals(workerInfo.groupId)) {
+        _idToWorker.remove(workerInfo.id);
+      }
+    }
+    for (WorkerInfo workerInfo : _addressToWorker.values()) {
+      if (workerGroup.equals(workerInfo.groupId)) {
+        _addressToWorker.remove(workerInfo.endpoint.address());
+      }
+    }
+  }
+
+  // 这个类要首先获取锁
+  private void syncWorkerGroup(String workerGroup, List<RpcRegisterMessage> messages) {
+    Map<String, WorkerInfo> toUpdateWorkers = Maps.newHashMap();
+    Set<String> unModifyWorkerIds = Sets.newHashSet();
+    for (RpcRegisterMessage message : messages) {
+      String workerId = message.detail.getWorkerId();
+      if (_idToWorker.containsKey(workerId) && _addressToWorker.containsKey(message.address)) {
+        unModifyWorkerIds.add(workerId);
+      } else {
+        RpcEndpointRef workerRef = new NettyRpcEndpointRef(conf, new RpcEndpointAddress(message.address, Worker.ENDPOINT_NAME),
+          (NettyRpcEnv) rpcEnv);
+        WorkerInfo workerInfo = new WorkerInfo(workerId, message.detail.getWorkerGroup(), workerRef);
+        toUpdateWorkers.put(workerId, workerInfo);
+        _idToWorker.put(workerId, workerInfo);
+        _addressToWorker.put(message.address, workerInfo);
+      }
+    }
+    List<WorkerInfo> newWorkerInfos = Lists.newArrayList();
+    for (WorkerInfo workerInfo : _workerGroups.get(workerGroup)) {
+      if (unModifyWorkerIds.contains(workerInfo.id)) {
+        newWorkerInfos.add(workerInfo);
+      } else if (toUpdateWorkers.containsKey(workerInfo.id)) {
+        newWorkerInfos.add(toUpdateWorkers.get(workerInfo.id));
+      } else {
+        // remove this workerInfo
+      }
+    }
+    _workerGroups.put(workerGroup, newWorkerInfos);
+  }
+
   class WorkerNodeChangeListener implements ZKNodeChangeListener {
 
     @Override public void onChange(String workerGroup, List<RpcRegisterMessage> messages) {
@@ -372,29 +394,12 @@ public class Master extends RpcEndpoint {
         return;
       }
       try {
+        // 尝试获取写锁，如果获取不到说明其他线程在刷新缓存，直接返回
         if (workerLock.tryLock()) {
           if (messages == null || messages.isEmpty()) {
-            List<WorkerInfo> workerInfos = _workerGroups.get(workerGroup);
-            for (WorkerInfo workerInfo : workerInfos) {
-              _idToWorker.remove(workerInfo.id);
-            }
-            _workerGroups.remove(workerGroup);
+            unregisterWorkerGroup(workerGroup);
           }
-          // workerId -> workerInfo
-          List<WorkerInfo> newWorkers = Lists.newArrayList();
-          for (RpcRegisterMessage message : messages) {
-            String workerId = message.detail.getWorkerId();
-            WorkerInfo workerInfo = _idToWorker.get(workerId);
-            if (workerInfo != null && workerInfo.endpoint.address().equals(message.address)) {
-              newWorkers.add(workerInfo);
-            } else {
-              RpcEndpointRef workerRef = rpcEnv.setupEndpointRef(message.address, Worker.ENDPOINT_NAME);
-              WorkerInfo newWorkerInfo = new WorkerInfo(workerId, workerGroup, workerRef);
-              newWorkers.add(newWorkerInfo);
-              _idToWorker.put(workerId, newWorkerInfo);
-            }
-          }
-          _workerGroups.put(workerGroup, newWorkers);
+          syncWorkerGroup(workerGroup, messages);
         }
       } finally {
         if (workerLock.isHeldByCurrentThread()) {
