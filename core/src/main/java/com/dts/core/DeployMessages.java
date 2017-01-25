@@ -2,33 +2,29 @@ package com.dts.core;
 
 import com.dts.rpc.RpcEndpointRef;
 
+import java.io.Serializable;
+
 /**
  * @author zhangxin
  */
-public class DeployMessages {
+public class DeployMessages implements Serializable {
 
   // Worker to Master
 
-  public static class RegisterWorker {
+  public static class RegisterWorker implements Serializable {
     public final String workerId;
-    public final String host;
-    public final int port;
-    public final RpcEndpointRef worker;
     public final int cores;
     public final long memory;
     public final String groupId;
+    public final RpcEndpointRef worker;
 
     public RegisterWorker(
       String workerId,
-      String host,
-      int port,
       RpcEndpointRef worker,
       int cores,
       long memory,
       String groupId) {
       this.workerId = workerId;
-      this.host = host;
-      this.port = port;
       this.worker = worker;
       this.cores = cores;
       this.memory = memory;
@@ -36,7 +32,7 @@ public class DeployMessages {
     }
   }
 
-  public static class Heartbeat {
+  public static class Heartbeat implements Serializable {
     public final String workerId;
     public final RpcEndpointRef worker;
 
@@ -46,7 +42,7 @@ public class DeployMessages {
     }
   }
 
-  public static class WorkerLastestState {
+  public static class WorkerLastestState implements Serializable {
     public final String workerId;
     public final int coreUsed;
     public final int memoryUsed;
@@ -58,55 +54,43 @@ public class DeployMessages {
     }
   }
 
-  public static class MasterChangeAckFromWorker {
-    public final String workerId;
-    public final int coreUsed;
-    public final int memoryUsed;
+  public static class SendHeartbeat implements Serializable {}
 
-    public MasterChangeAckFromWorker(String workerId, int coreUsed, int memoryUsed) {
-      this.workerId = workerId;
-      this.coreUsed = coreUsed;
-      this.memoryUsed = memoryUsed;
-    }
-  }
-
-  public static class SendHeartbeat {}
-
-  public static class LaunchedTask {
-    public final TaskInfo task;
+  public static class LaunchedTask implements Serializable {
+    public final TriggeredTaskInfo task;
     public final String message;
 
-    public LaunchedTask(TaskInfo task, String message) {
+    public LaunchedTask(TriggeredTaskInfo task, String message) {
       this.task = task;
       this.message = message;
     }
   }
 
-  public static class ExecutingTask {
-    public final TaskInfo task;
+  public static class ExecutingTask implements Serializable {
+    public final TriggeredTaskInfo task;
     public final String executingThread;
 
-    public ExecutingTask(TaskInfo task, String executingThread) {
+    public ExecutingTask(TriggeredTaskInfo task, String executingThread) {
       this.task = task;
       this.executingThread = executingThread;
     }
   }
 
-  public static class FinishTask {
-    public final TaskInfo task;
+  public static class FinishTask implements Serializable {
+    public final TriggeredTaskInfo task;
     public final String message;
 
-    public FinishTask(TaskInfo task, String message) {
+    public FinishTask(TriggeredTaskInfo task, String message) {
       this.task = task;
       this.message = message;
     }
   }
 
-  public static class KilledTask {
-    public final TaskInfo task;
+  public static class KilledTask implements Serializable {
+    public final TriggeredTaskInfo task;
     public final String message;
 
-    public KilledTask(TaskInfo task, String message) {
+    public KilledTask(TriggeredTaskInfo task, String message) {
       this.task = task;
       this.message = message;
     }
@@ -130,7 +114,7 @@ public class DeployMessages {
     }
   }
 
-  public static class ReconnectWorker {
+  public static class ReconnectWorker implements Serializable {
     public final String masterUrl;
 
     public ReconnectWorker(String masterUrl) {
@@ -138,29 +122,29 @@ public class DeployMessages {
     }
   }
 
-  public static class RequestWorkerState {}
+  public static class RequestWorkerState implements Serializable {}
 
-  public static class LaunchTask {
-    public final TaskInfo task;
+  public static class LaunchTask implements Serializable {
+    public final TriggeredTaskInfo task;
 
-    public LaunchTask(TaskInfo task) {
+    public LaunchTask(TriggeredTaskInfo task) {
       this.task = task;
     }
   }
 
-  public static class KillTask {
-    public final TaskInfo task;
+  public static class KillRunningTask implements Serializable {
+    public final TriggeredTaskInfo task;
 
-    public KillTask(TaskInfo task) {
+    public KillRunningTask(TriggeredTaskInfo task) {
       this.task = task;
     }
   }
 
-  public interface RegisterResponse {}
+  public interface RegisterResponse extends Serializable {}
 
   // Master to Worker & Client
 
-  public static class MasterChanged {
+  public static class MasterChanged implements Serializable {
     public final RpcEndpointRef master;
 
     public MasterChanged(RpcEndpointRef master) {
@@ -171,95 +155,43 @@ public class DeployMessages {
   public static class MasterInStandby implements RegisterResponse {}
 
   // Worker internal
-  public static class ReregisterWithMaster {}
+  public static class ReregisterWithMaster implements Serializable {}
 
   // Client to Master
 
-  public static class RegisterClient {
-    public final String clientId;
-    public final String host;
-    public final int port;
-    public final RpcEndpointRef client;
+  public static class RegisterJob implements Serializable {
+    public final JobConf jobConf;
 
-    public RegisterClient(String clientId, String host, int port, RpcEndpointRef client) {
-      this.clientId = clientId;
-      this.host = host;
-      this.port = port;
-      this.client = client;
+    public RegisterJob(JobConf jobConf) {
+      this.jobConf = jobConf;
     }
   }
 
-  public static class RegisterTask {
-    public final TaskConf taskConf;
+  public static class UpdateJob implements Serializable {
+    public final JobConf jobConf;
 
-    public RegisterTask(TaskConf taskConf) {
-      this.taskConf = taskConf;
+    public UpdateJob(JobConf jobConf) { this.jobConf = jobConf; }
+  }
+
+  public static class UnregisterJob implements Serializable {
+    public final String jobId;
+
+    public UnregisterJob(String jobId) {
+      this.jobId = jobId;
     }
   }
 
-  public static class RegisterTaskGroup {
-    public final TaskGroup taskGroup;
+  public static class ManualTriggerJob implements Serializable {
+    public final JobConf jobConf;
 
-    public RegisterTaskGroup(TaskGroup taskGroup) {
-      this.taskGroup = taskGroup;
-    }
-  }
-
-  public static class UpdateTask {
-    public final TaskConf taskConf;
-
-    public UpdateTask(TaskConf taskConf) { this.taskConf = taskConf; }
-  }
-
-  public static class UpdateTaskGroup {
-    public final TaskGroup taskGroup;
-
-    public UpdateTaskGroup(TaskGroup taskGroup) { this.taskGroup = taskGroup; }
-  }
-
-  public static class UnregisterTask {
-    public final String taskId;
-
-    public UnregisterTask(String taskId) {
-      this.taskId = taskId;
-    }
-  }
-
-  public static class UnregisterTaskGroup {
-    public final String taskGroupId;
-
-    public UnregisterTaskGroup(String taskGroupId) {
-      this.taskGroupId = taskGroupId;
-    }
-  }
-
-  public static class ManualTriggerTask {
-    public final String taskId;
-
-    public ManualTriggerTask(String taskId) {
-      this.taskId = taskId;
-    }
-  }
-
-  public static class ManualTriggerTaskGroup {
-    public final String taskGroupId;
-
-    public ManualTriggerTaskGroup(String taskGroupId) {
-      this.taskGroupId = taskGroupId;
-    }
-  }
-
-  public static class MasterChangeAckFromClient {
-    public final String clientId;
-
-    public MasterChangeAckFromClient(String clientId) {
-      this.clientId = clientId;
+    public ManualTriggerJob(JobConf jobConf) {
+      this.jobConf = jobConf;
     }
   }
 
   // Master to Client
 
-  public static class RegisteredClient {
+  public static class RegisteredClient implements Serializable {
     public final String clientId;
     public final RpcEndpointRef master;
 
@@ -269,7 +201,7 @@ public class DeployMessages {
     }
   }
 
-  public static class RegisterClientFailed {
+  public static class RegisterClientFailed implements Serializable {
     public final String message;
 
     public RegisterClientFailed(String message) {
@@ -277,63 +209,33 @@ public class DeployMessages {
     }
   }
 
-  public static class RegisteredTask {
-    public final String taskId;
+  public static class RegisteredJob implements Serializable {
+    public final String jobId;
 
-    public RegisteredTask(String taskId) {
-      this.taskId = taskId;
+    public RegisteredJob(String jobId) {
+      this.jobId = jobId;
     }
   }
 
-  public static class RegisterTaskFailed {
+  public static class RegisterJobFailed implements Serializable {
     public final String message;
 
-    public RegisterTaskFailed(String message) {
+    public RegisterJobFailed(String message) {
       this.message = message;
     }
   }
 
-  public static class RegisteredTaskGroup {
-    public final String taskGroupId;
+  public static class UnregisteredJob implements Serializable {
+    public final String jobId;
 
-    public RegisteredTaskGroup(String taskGroupId) {
-      this.taskGroupId = taskGroupId;
+    public UnregisteredJob(String jobId) {
+      this.jobId = jobId;
     }
   }
 
-  public static class RegisterTaskGroupFailed {
-    public final String message;
+  public static class UpdatedJob implements Serializable {
+    public final String jobId;
 
-    public RegisterTaskGroupFailed(String message) {
-      this.message = message;
-    }
-  }
-
-  public static class UnregisteredTask {
-    public final String taskId;
-
-    public UnregisteredTask(String taskId) {
-      this.taskId = taskId;
-    }
-  }
-
-  public static class UnregisteredTaskGroup {
-    public final String taskGroupId;
-
-    public UnregisteredTaskGroup(String taskGroupId) {
-      this.taskGroupId = taskGroupId;
-    }
-  }
-
-  public static class UpdatedTask {
-    public final String taskId;
-
-    public UpdatedTask(String taskId) { this.taskId = taskId; }
-  }
-
-  public static class UpdatedTaskGroup {
-    public final String taskGroupId;
-
-    public UpdatedTaskGroup(String taskGroupId) { this.taskGroupId = taskGroupId; }
+    public UpdatedJob(String jobId) { this.jobId = jobId; }
   }
 }

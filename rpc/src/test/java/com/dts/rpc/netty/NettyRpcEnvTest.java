@@ -40,7 +40,7 @@ public class NettyRpcEnvTest {
   }
 
   protected RpcEnv createRpcEnv(DTSConf conf, String name, int port, boolean clientMode) {
-    return new NettyRpcEnvFactory().create(new RpcEnvConfig(conf, name, TestUtils.getLocalHost(), port, clientMode));
+    return RpcEnv.create(name, TestUtils.getLocalHost(), port, conf, clientMode);
   }
 
   @Test
@@ -330,7 +330,7 @@ public class NettyRpcEnvTest {
           }
         }.start();
       }
-      TimeUnit.MILLISECONDS.sleep(50);
+      TimeUnit.MILLISECONDS.sleep(100);
       assertEquals(1000, result.get());
       env.stop(endpointRef);
     }

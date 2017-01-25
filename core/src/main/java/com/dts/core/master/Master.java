@@ -1,24 +1,33 @@
 package com.dts.core.master;
 
-import com.dts.core.TaskConf;
-import com.dts.core.TaskGroup;
-import com.dts.core.TaskInfo;
+import com.dts.core.TriggeredTaskInfo;
 import com.dts.core.queue.TaskQueueContext;
+import com.dts.core.registration.RegisterClient;
+import com.dts.core.registration.RpcRegisterMessage;
+import com.dts.core.registration.ZKNodeChangeListener;
+import com.dts.core.util.AddressUtil;
 import com.dts.core.util.DTSConfUtil;
+import com.dts.core.util.ThreadUtil;
 import com.dts.core.util.Tuple2;
+import com.dts.core.worker.Worker;
 import com.dts.rpc.*;
+import com.dts.rpc.exception.DTSException;
+import com.dts.rpc.netty.NettyRpcEndpointRef;
 import com.dts.rpc.netty.NettyRpcEnv;
 import com.dts.rpc.util.SerializerInstance;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import org.apache.curator.x.discovery.ServiceInstance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.*;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static com.dts.core.DeployMessages.*;
 
@@ -30,21 +39,19 @@ public class Master extends RpcEndpoint {
   private final Logger logger = LoggerFactory.getLogger(getClass());
 
   private final RpcAddress address;
-  private final ScheduledThreadPoolExecutor forwardMessageThread;
+  private final ScheduledExecutorService syncZKWorkerThread;
+  private final ScheduledExecutorService sendTaskToWorkThread;
 
   private final DTSConf conf;
-  private final Set<WorkerInfo> workers = Sets.newHashSet();
-  private final Map<String, WorkerInfo> idToWorker = Maps.newHashMap();
-  private final Map<RpcAddress, WorkerInfo> addressToWorker = Maps.newHashMap();
-  private final Set<String> workerGroups = Sets.newHashSet();
-
-  private final Set<ClientInfo> clients = Sets.newHashSet();
-  private final Map<String, ClientInfo> idToClient = Maps.newHashMap();
-  private final Map<RpcAddress, ClientInfo> addressToClient = Maps.newHashMap();
+  private final Map<String, List<WorkerInfo>> _workerGroups = Maps.newHashMap();
+  private final Map<String, WorkerInfo> _idToWorker = Maps.newHashMap();
+  private final Map<RpcAddress, WorkerInfo> _addressToWorker = Maps.newHashMap();
+  private final ReentrantLock workerLock = new ReentrantLock();
 
   private final long WORKER_TIMEOUT_MS;
-  private final long REAPER_ITERATIONS;
+  private final long SEND_TASK_INTERVAL_MS;
 
+  public static final String SYSTEM_NAME = "dtsMaster";
   public static final String ENDPOINT_NAME = "Master";
 
   private final TaskQueueContext taskQueueContext;
@@ -54,48 +61,72 @@ public class Master extends RpcEndpoint {
   private RecoveryState state = RecoveryState.STANDBY;
   private ZooKeeperPersistenceEngine persistenceEngine;
   private ZooKeeperLeaderElectionAgent leaderElectionAgent;
-  private ScheduledFuture recoveryCompletionTask;
-  private ScheduledFuture checkForWorkerTimeOutTask;
+  private ScheduledFuture syncWorkerTask;
+  private ScheduledFuture sendTaskToWorkTask;
+  private RegisterClient registerClient;
 
-  public Master(NettyRpcEnv rpcEnv, RpcAddress address, DTSConf conf, TaskQueueContext taskQueueContext) {
+  public Master(RpcEnv rpcEnv, RpcAddress address, DTSConf conf, TaskQueueContext taskQueueContext) {
     super(rpcEnv);
     this.address = address;
-    this.masterUrl = address.getHostPort();
+    this.masterUrl = address.hostPort;
     this.conf = conf;
     this.WORKER_TIMEOUT_MS = conf.getLong("dts.worker.timeout", 60) * 1000;
-    this.REAPER_ITERATIONS = conf.getInt("dts.dead.worker.persistence", 15);
+    this.SEND_TASK_INTERVAL_MS = conf.getLong("dts.master.sendTaskMs", 100);
     this.taskQueueContext = taskQueueContext;
     this.workerScheduler = new WorkerScheduler(conf);
 
-    ThreadFactory threadFactory = new ThreadFactoryBuilder().setDaemon(true).setNameFormat("master-forward-message-thread").build();
-    ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, threadFactory);
-    executor.setRemoveOnCancelPolicy(true);
-    this.forwardMessageThread = executor;
+    this.syncZKWorkerThread = ThreadUtil.newDaemonSingleThreadScheduledExecutor("sync-zookeeper-workers-thread");
+    this.sendTaskToWorkThread = ThreadUtil.newDaemonSingleThreadScheduledExecutor("master-schedule-task-thread");
   }
 
   @Override
   public void onStart() {
-    checkForWorkerTimeOutTask = forwardMessageThread.scheduleAtFixedRate(new Runnable() {
+    syncWorkerTask = syncZKWorkerThread.scheduleAtFixedRate(new Runnable() {
       @Override public void run() {
-        self().send(new CheckForWorkerTimeOut());
+        self().send(new SyncZKWorkers());
       }
     }, 0, WORKER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+
+    sendTaskToWorkTask = sendTaskToWorkThread.scheduleAtFixedRate(new Runnable() {
+      @Override public void run() {
+        for (String workerGroup : workerGroups.keySet()) {
+          schedule(workerGroup);
+        }
+      }
+    }, 0, SEND_TASK_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
     SerializerInstance serializer = new SerializerInstance(conf);
     this.persistenceEngine = new ZooKeeperPersistenceEngine(conf, serializer);
     this.leaderElectionAgent = new ZooKeeperLeaderElectionAgent(this, conf);
     taskQueueContext.start();
+
+    // 向注册中心注册master节点
+    registerClient = new RegisterClient(conf, new WorkerNodeChangeListener());
+    try {
+      ServiceInstance instance = ServiceInstance.builder()
+        .address(address.host)
+        .port(address.port)
+        .name(SYSTEM_NAME)
+        .build();
+      registerClient.registerService(instance);
+    } catch (Exception e) {
+      throw new DTSException(e);
+    }
   }
 
   @Override
   public void onStop() {
-    if (recoveryCompletionTask != null) {
-      recoveryCompletionTask.cancel(true);
+    if (syncWorkerTask != null) {
+      syncWorkerTask.cancel(true);
     }
-    if (checkForWorkerTimeOutTask != null) {
-      checkForWorkerTimeOutTask.cancel(true);
+    if (sendTaskToWorkTask != null) {
+      sendTaskToWorkTask.cancel(true);
     }
-    forwardMessageThread.shutdownNow();
+    if (registerClient != null) {
+      registerClient.close();
+    }
+    syncZKWorkerThread.shutdownNow();
+    sendTaskToWorkThread.shutdownNow();
     persistenceEngine.close();
     leaderElectionAgent.stop();
   }
@@ -111,27 +142,20 @@ public class Master extends RpcEndpoint {
   @Override
   public void receive(Object o) {
     if (o instanceof ElectedLeader) {
-      Tuple2<WorkerInfo[], ClientInfo[]> tuple = persistenceEngine.readPersistedData(rpcEnv);
-      WorkerInfo[] storedWorkers = tuple._1;
-      ClientInfo[] storedClients = tuple._2;
-      if (storedWorkers != null && storedClients != null && taskQueueContext.executingTaskQueue() != null) {
+      Tuple2<List<WorkerInfo>, List<ClientInfo>> tuple = persistenceEngine.readPersistedData(rpcEnv);
+      List<WorkerInfo> storedWorkers = tuple._1;
+      List<ClientInfo> storedClients = tuple._2;
+      if (storedWorkers != null && storedWorkers.size() > 0
+        && storedClients != null && storedClients.size() > 0
+        && taskQueueContext.executingTaskQueue() != null) {
         state = RecoveryState.RECOVERING;
       } else {
         state = RecoveryState.ALIVE;
       }
       logger.info("I have been elected leader! New state: " + state);
       if (state == RecoveryState.RECOVERING) {
-        beginRecovery(storedWorkers, storedClients);
-        recoveryCompletionTask = forwardMessageThread.schedule(new Runnable() {
-          @Override public void run() {
-            self().send(new CompleteRecovery());
-          }
-        }, WORKER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        recovery();
       }
-    }
-
-    else if (o instanceof CompleteRecovery) {
-      completeRecovery();
     }
 
     else if (o instanceof RevokedLeadership) {
@@ -139,33 +163,10 @@ public class Master extends RpcEndpoint {
       System.exit(0);
     }
 
-    else if (o instanceof Heartbeat) {
-      Heartbeat msg = (Heartbeat)o;
-      if (idToWorker.containsKey(msg.workerId)) {
-        WorkerInfo workerInfo = idToWorker.get(msg.workerId);
-        workerInfo.setLastHeartbeat(System.currentTimeMillis());
-      } else {
-        boolean findWorkerId = false;
-        for (WorkerInfo workerInfo : workers) {
-          if (workerInfo.id.equals(msg.workerId)) {
-            findWorkerId = true;
-            logger.warn("Got heartbeat from unregistered worker {}. "
-              + "Asking it to re-register", msg.workerId);
-            msg.worker.send(new ReconnectWorker(masterUrl));
-            break;
-          }
-        }
-        if (!findWorkerId) {
-          logger.warn("Got heartbeat from unregistered worker {}. "
-            + "This worker was never registered, so ignoring the heartbeat", msg.workerId);
-        }
-      }
-    }
-
     else if (o instanceof WorkerLastestState) {
       WorkerLastestState msg = (WorkerLastestState)o;
-      if (idToWorker.containsKey(msg.workerId)) {
-        WorkerInfo workerInfo = idToWorker.get(msg.workerId);
+      if (_idToWorker.containsKey(msg.workerId)) {
+        WorkerInfo workerInfo = _idToWorker.get(msg.workerId);
         workerInfo.setCoresUsed(msg.coreUsed);
         workerInfo.setMemoryUsed(msg.memoryUsed);
       } else {
@@ -173,32 +174,8 @@ public class Master extends RpcEndpoint {
       }
     }
 
-    else if (o instanceof CheckForWorkerTimeOut) {
-      timeOutDeadWorkers();
-    }
-
-    else if (o instanceof MasterChangeAckFromClient) {
-      MasterChangeAckFromClient msg = (MasterChangeAckFromClient)o;
-      ClientInfo client = idToClient.get(msg.clientId);
-      if (client != null) {
-        logger.info("Client has been re-registered: " + msg.clientId);
-        client.setState(ClientState.ALIVE);
-      } else {
-        logger.warn("Master change ack from unknown client: " + msg.clientId);
-      }
-    }
-
-    else if (o instanceof MasterChangeAckFromWorker) {
-      MasterChangeAckFromWorker msg = (MasterChangeAckFromWorker)o;
-      WorkerInfo worker = idToWorker.get(msg.workerId);
-      if (worker != null) {
-        logger.info("Worker has been re-registered: " + msg.workerId);
-        worker.setState(WorkerState.ALIVE);
-        worker.setCoresUsed(msg.coreUsed);
-        worker.setMemoryUsed(msg.memoryUsed);
-      } else {
-        logger.warn("Scheduler state from unknown worker: " + msg.workerId);
-      }
+    else if (o instanceof SyncZKWorkers) {
+      syncZKWorkers();
     }
 
     else if (o instanceof  LaunchedTask) {
@@ -215,184 +192,74 @@ public class Master extends RpcEndpoint {
 
     else if (o instanceof FinishTask) {
       FinishTask msg = (FinishTask)o;
-      TaskInfo nextTask = taskQueueContext.completeTask(msg.task);
-      if (nextTask != null) {
-        taskQueueContext.addNextTaskToExecutableQueue(nextTask);
-      }
+      taskQueueContext.completeTask(msg.task);
     }
 
-    else if (o instanceof ManualTriggerTask) {
-      ManualTriggerTask msg = (ManualTriggerTask)o;
-      taskQueueContext.triggerTask(msg.taskId);
-    }
-
-    else if (o instanceof ManualTriggerTaskGroup) {
-      ManualTriggerTaskGroup msg = (ManualTriggerTaskGroup)o;
-      taskQueueContext.triggerTaskGroup(msg.taskGroupId);
+    else if (o instanceof ManualTriggerJob) {
+      ManualTriggerJob msg = (ManualTriggerJob)o;
+      taskQueueContext.manualTriggerJob(msg.jobConf);
     }
   }
 
   @Override
   public void receiveAndReply(Object content, RpcCallContext context) {
     if (content instanceof RegisterWorker) {
-      RegisterWorker msg = (RegisterWorker)content;
-      if (state == RecoveryState.STANDBY) {
-        context.reply(new MasterInStandby());
-      } else if (idToWorker.containsKey(msg.workerId)) {
-        context.reply(new RegisterWorkerFailed("Duplicate worker ID"));
-      } else {
-        WorkerInfo workerInfo = new WorkerInfo(msg.workerId, msg.host, msg.port, msg.cores, msg.memory,
-          msg.worker, msg.groupId);
-        if (registerWorker(workerInfo)) {
-          persistenceEngine.addWorker(workerInfo);
-          workerGroups.add(workerInfo.groupId);
-          context.reply(new RegisteredWorker(self()));
-          schedule(msg.groupId);
-        } else {
-          RpcAddress workerAddress = workerInfo.endpoint.address();
-          logger.warn("Worker registration failed. Attempted to re-register worker at same address: " + workerAddress);
-          context.reply(new RegisterWorkerFailed("Attempted to re-register worker at same address: " + workerAddress));
-        }
-      }
+//      RegisterWorker msg = (RegisterWorker)content;
+//      if (state == RecoveryState.STANDBY) {
+//        context.reply(new MasterInStandby());
+//      } else if (idToWorker.containsKey(msg.workerId)) {
+//        context.reply(new RegisterWorkerFailed("Duplicate worker ID"));
+//      } else {
+//        WorkerInfo workerInfo = new WorkerInfo(msg.workerId, msg.cores, msg.memory,
+//          msg.groupId, msg.worker);
+//        if (registerWorker(workerInfo)) {
+//          persistenceEngine.addWorker(workerInfo);
+//          workerGroups.add(workerInfo.groupId);
+//          context.reply(new RegisteredWorker(self()));
+//          schedule(msg.groupId);
+//        } else {
+//          RpcAddress workerAddress = workerInfo.endpoint.address();
+//          logger.warn("Worker registration failed. Attempted to re-register worker at same address: " + workerAddress);
+//          context.reply(new RegisterWorkerFailed("Attempted to re-register worker at same address: " + workerAddress));
+//        }
+//      }
     }
 
-    else if (content instanceof RegisterClient) {
-      RegisterClient msg = (RegisterClient)content;
-      if (state == RecoveryState.STANDBY) {
-        context.reply(new MasterInStandby());
-      } else if (idToClient.containsKey(msg.clientId)) {
-        context.reply(new RegisterClientFailed("Duplicate client ID"));
-      } else {
-        ClientInfo clientInfo = new ClientInfo(msg.clientId, msg.host, msg.port, msg.client);
-        if (registerClient(clientInfo)) {
-          persistenceEngine.addClient(clientInfo);
-          context.reply(new RegisteredClient(msg.clientId, self()));
-        } else {
-          RpcAddress clientAddress = clientInfo.endpoint.address();
-          logger.warn("Client registration failed. Attempted to re-register client at same address: " + clientAddress);
-          context.reply(new RegisterClientFailed("Attempted to re-register client at same address: " + clientAddress));
-        }
-      }
-    }
-
-    else if (content instanceof RegisterTask) {
-      RegisterTask msg = (RegisterTask) content;
-      if (addOrUpdateTask(msg.taskConf, false)) {
-        context.reply(new RegisteredTask(msg.taskConf.getTaskId()));
-      } else {
-        logger.warn("Attempted to register task failed: " + msg.taskConf.getTaskId());
-        context.reply(new RegisterTaskFailed("Attempted to register task failed: " + msg.taskConf.getTaskId()));
-      }
-    }
-
-    else if (content instanceof RegisterTaskGroup) {
-      RegisterTaskGroup msg = (RegisterTaskGroup)content;
-      if (addOrUpdateTaskGroup(msg.taskGroup, false)) {
-        context.reply(new RegisteredTaskGroup(msg.taskGroup.getTaskGroupId()));
-      } else {
-        logger.warn("Attempted to register task group failed: " + msg.taskGroup.getTaskGroupId());
-        context.reply(new RegisterTaskGroupFailed("Attempted to register task group failed: " + msg.taskGroup.getTaskGroupId()));
-      }
-    }
-
-    else if (content instanceof UnregisterTask) {
-      UnregisterTask msg = (UnregisterTask)content;
-      removeTask(msg.taskId);
-      context.reply(new UnregisteredTask(msg.taskId));
-    }
-
-    else if (content instanceof UnregisterTaskGroup) {
-      UnregisterTaskGroup msg = (UnregisterTaskGroup)content;
-      removeTaskGroup(msg.taskGroupId);
-      context.reply(new UnregisteredTaskGroup(msg.taskGroupId));
-    }
-
-    else if (content instanceof UpdateTask) {
-      UpdateTask msg = (UpdateTask)content;
-      addOrUpdateTask(msg.taskConf, true);
-      context.reply(new UpdatedTask(msg.taskConf.getTaskId()));
-    }
-
-    else if (content instanceof UpdateTaskGroup) {
-      UpdateTaskGroup msg = (UpdateTaskGroup)content;
-      addOrUpdateTaskGroup(msg.taskGroup, true);
-      context.reply(new UpdatedTaskGroup(msg.taskGroup.getTaskGroupId()));
-    }
-
-    else if (content instanceof KillTask) {
-      KillTask msg = (KillTask)content;
-      WorkerInfo worker = workerScheduler.getLaunchTaskWorker(msg.task.taskConf.getWorkerGroup());
-      Future future = worker.endpoint.ask(new KillTask(msg.task));
+    else if (content instanceof KillRunningTask) {
+      KillRunningTask msg = (KillRunningTask)content;
+      WorkerInfo worker = workerScheduler.getLaunchTaskWorker(msg.task.getWorkerGroup());
+      Future future = worker.endpoint.ask(new KillRunningTask(msg.task));
       try {
         Object result = future.get(WORKER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         context.reply(new KilledTask(msg.task, (String)result));
       } catch (InterruptedException e) {
         e.printStackTrace();
       } catch (ExecutionException e) {
-        e.printStackTrace();
+        e.printStackTrace(); // TODO add kill failure
       } catch (TimeoutException e) {
         e.printStackTrace();
       }
+    }
+
+    else {
+      context.sendFailure(new DTSException("Master not support receive msg type: " + content.getClass().getCanonicalName()));
     }
   }
 
   @Override
   public void onDisconnected(RpcAddress address) {
-    addressToWorker.get(address);
+    WorkerInfo workerInfo = _addressToWorker.get(address);
+    removeWorker(workerInfo);
   }
 
-  private boolean canCompleteRecovery() {
-    boolean complete = true;
-    for (WorkerInfo worker : workers) {
-      if (worker.getState() == WorkerState.UNKNOWN) {
-        complete = false;
-        break;
-      }
-    }
-    return complete;
-  }
-
-  private void beginRecovery(WorkerInfo[] storedWorkers, ClientInfo[] storedClients) {
-    for (ClientInfo client : storedClients) {
-      logger.info("Trying to recover client: " + client);
-      try {
-        registerClient(client);
-        client.setState(ClientState.UNKNOWN);
-        client.endpoint.send(new MasterChanged(self()));
-      } catch (Exception e) {
-        logger.info("Client {} had exception on reconnect", client.id);
-      }
-    }
-
-    for (WorkerInfo worker : storedWorkers) {
-      logger.info("Trying to recover worker: " + worker.id);
-      try {
-        registerWorker(worker);
-        worker.setState(WorkerState.UNKNOWN);
-        worker.endpoint.send(new MasterChanged(self()));
-      } catch (Exception e) {
-        logger.info("Worker {} had exception on reconnect", worker.id);
-      }
-    }
-  }
-
-  private void completeRecovery() {
+  private void recovery() {
+    reregisterWorkers();
     if (state != RecoveryState.RECOVERING) {
       return;
     }
-    for (WorkerInfo worker : workers) {
-      if (worker.getState() == WorkerState.UNKNOWN) {
-        workers.remove(worker);
-      }
-    }
-    for (ClientInfo client : clients) {
-      if (client.getState() == ClientState.UNKNOWN) {
-        clients.remove(client);
-      }
-    }
 
     state = RecoveryState.ALIVE;
-    for (String workerGroup : workerGroups) {
+    for (String workerGroup : _workerGroups.keySet()) {
       schedule(workerGroup);
     }
     logger.info("Recovery complete - resuming operations!");
@@ -402,7 +269,7 @@ public class Master extends RpcEndpoint {
     if (state != RecoveryState.ALIVE) {
       return;
     }
-    TaskInfo task = taskQueueContext.get2LaunchingTask(workerGroup);
+    TriggeredTaskInfo task = taskQueueContext.get2LaunchingTask(workerGroup);
     if (task != null) {
       WorkerInfo worker = workerScheduler.getLaunchTaskWorker(workerGroup);
       // TODO send task to worker
@@ -410,112 +277,128 @@ public class Master extends RpcEndpoint {
     }
   }
 
-  private boolean addOrUpdateTask(TaskConf taskConf, boolean update) {
-    boolean success;
-    if (update) {
-      success = taskQueueContext.updateCronTask(taskConf);
-    } else {
-      success = taskQueueContext.addCronTask(taskConf);
-    }
-    return success;
-  }
+  private void reregisterWorkers() {
+    _workerGroups.clear();
+    _idToWorker.clear();
+    _addressToWorker.clear();
 
-  private boolean addOrUpdateTaskGroup(TaskGroup taskGroup, boolean update) {
-    boolean success;
-    if (update) {
-      success = taskQueueContext.updateTaskGroup(taskGroup);
-    } else {
-      success = taskQueueContext.addTaskGroup(taskGroup);
-    }
-    return success;
-  }
-
-  private void removeTask(String taskId) {
-    taskQueueContext.removeCronTask(taskId);
-  }
-
-  private void removeTaskGroup(String taskGroupId) {
-    taskQueueContext.removeTaskGroup(taskGroupId);
-  }
-
-  private boolean registerWorker(WorkerInfo worker) {
-    Set<WorkerInfo> toRemoveWorkers = Sets.newHashSet();
-    for (WorkerInfo w : workers) {
-      if (w.host.equals(worker.host) && w.port == worker.port && w.getState() == WorkerState.DEAD) {
-        toRemoveWorkers.add(w);
+    Set<String> groups = registerClient.getAllServiceName();
+    for (String workerGroup : groups) {
+      List<RpcRegisterMessage> messages = registerClient.getByServiceName(workerGroup);
+      if (messages == null || messages.isEmpty()) {
+        logger.warn("WorkerGroup {} has no valid worker node", workerGroup);
+        continue;
       }
-    }
-    for (WorkerInfo w : toRemoveWorkers) {
-      workers.remove(w);
-    }
-    RpcAddress workerAddress = worker.endpoint.address();
-    if (addressToWorker.containsKey(workerAddress)) {
-      WorkerInfo oldWorker = addressToWorker.get(workerAddress);
-      if (oldWorker.getState() == WorkerState.UNKNOWN) {
-        removeWorker(oldWorker);
-      } else {
-        logger.info("Attempted to re-register worker at same address: " + workerAddress);
-        return false;
+      List<WorkerInfo> workerInfos = Lists.newArrayList();
+      for (RpcRegisterMessage message : messages) {
+        String workerId = message.detail.getWorkerId();
+        RpcEndpointRef workerRef = new NettyRpcEndpointRef(conf, new RpcEndpointAddress(message.address, Worker.ENDPOINT_NAME),
+          (NettyRpcEnv) rpcEnv);
+        WorkerInfo workerInfo = new WorkerInfo(workerId, message.detail.getWorkerGroup(), workerRef);
+        WorkerInfo oldWorkerInfo = _idToWorker.putIfAbsent(workerId, workerInfo);
+        if (oldWorkerInfo != null) {
+          logger.warn("Worker {} has already registered, ignore worker [address={}]",
+            workerId, message.address);
+          continue;
+        }
+        workerInfos.add(workerInfo);
+        _addressToWorker.put(message.address, workerInfo);
       }
+      _workerGroups.put(workerGroup, workerInfos);
     }
-    workers.add(worker);
-    idToWorker.put(worker.id, worker);
-    addressToWorker.put(workerAddress, worker);
-    return true;
   }
 
   private void removeWorker(WorkerInfo worker) {
     logger.info("Removing worker {} on {}:{}", worker.id, worker.host, worker.port);
     worker.setState(WorkerState.DEAD);
-    idToWorker.remove(worker.id);
-    addressToWorker.remove(worker.endpoint.address());
-    persistenceEngine.removeWorker(worker);
+    _idToWorker.remove(worker.id);
+    _addressToWorker.remove(worker.endpoint.address());
   }
 
-  private boolean registerClient(ClientInfo client) {
-    Set<ClientInfo> toRemoveClients = Sets.newHashSet();
-    for (ClientInfo c : clients) {
-      if (c.host.equals(client.host) && c.port == client.port && c.getState() == ClientState.DEAD) {
-        toRemoveClients.add(c);
-      }
-    }
-    for (ClientInfo c : toRemoveClients) {
-      clients.remove(c);
-    }
-    RpcAddress clientAddress = client.endpoint.address();
-    if (addressToClient.containsKey(clientAddress)) {
-      ClientInfo oldClient = addressToClient.get(clientAddress);
-      if (oldClient.getState() == ClientState.UNKNOWN) {
-        removeClient(oldClient);
-      } else {
-        logger.info("Attempted to re-register client at same address: " + clientAddress);
-        return false;
-      }
-    }
-    clients.add(client);
-    idToClient.put(client.id, client);
-    addressToClient.put(clientAddress, client);
-    return true;
-  }
-
-  private void removeClient(ClientInfo client) {
-    logger.info("Removing client {} on {}:{}", client.id, client.host, client.port);
-    client.setState(ClientState.DEAD);
-    idToClient.remove(client.getId());
-    persistenceEngine.removeClient(client);
-  }
-
-  private void timeOutDeadWorkers() {
-    long currentTime = System.currentTimeMillis();
-    for (WorkerInfo w : workers) {
-      if (w.getLastHeartbeat() < currentTime - WORKER_TIMEOUT_MS) {
-        if (w.getState() != WorkerState.DEAD) {
-          logger.warn("Removing {} because we got no heartbeat in {} seconds", w.id, WORKER_TIMEOUT_MS / 1000);
-          removeWorker(w);
-        } else {
-          if (w.getLastHeartbeat() < (currentTime - (REAPER_ITERATIONS + 1) * WORKER_TIMEOUT_MS)) {
-            workers.remove(w);
+  // TODO 增加缺少的worker， 删除不存在的worker
+  private void syncZKWorkers() {
+    Set<String> groups = registerClient.getAllServiceName();
+    try {
+      // 尝试获取写锁，如果获取不到说明其他线程在刷新缓存，直接返回
+      if (workerLock.tryLock()) {
+        // 删除不存在的worker group
+        for (String workerGroup : _workerGroups.keySet()) {
+          if (!groups.contains(workerGroup)) {
+            _workerGroups.remove(workerGroup);
+            for (WorkerInfo workerInfo : _idToWorker.values()) {
+              if (workerGroup.equals(workerInfo.groupId)) {
+                _idToWorker.remove(workerInfo.id);
+              }
+            }
+            for (WorkerInfo workerInfo : _addressToWorker.values()) {
+              if (workerGroup.equals(workerInfo.groupId)) {
+                _addressToWorker.remove(workerInfo.endpoint.address());
+              }
+            }
           }
+        }
+        for (String workerGroup : groups) {
+          List<RpcRegisterMessage> messages = registerClient.getByServiceName(workerGroup);
+          if (messages == null || messages.isEmpty()) {
+            
+          }
+          for (RpcRegisterMessage message : messages) {
+            String workerId = message.detail.getWorkerId();
+            if (_idToWorker.containsKey(workerId) && _addressToWorker.containsKey(message.address)
+              && _idToWorker.get(workerId) == _addressToWorker.get(message.address)) {
+              // do nothing
+            } else {
+              RpcEndpointRef workerRef = new NettyRpcEndpointRef(conf, new RpcEndpointAddress(message.address, Worker.ENDPOINT_NAME),
+                (NettyRpcEnv) rpcEnv);
+              WorkerInfo workerInfo = new WorkerInfo(workerId, message.detail.getWorkerGroup(), workerRef);
+              _idToWorker.put(workerId, workerInfo);
+              _addressToWorker.put(message.address, workerInfo);
+              //          List<WorkerInfo>
+            }
+          }
+        }
+      }
+    } finally {
+      if (workerLock.isHeldByCurrentThread()) {
+        workerLock.unlock();
+      }
+    }
+  }
+
+  class WorkerNodeChangeListener implements ZKNodeChangeListener {
+
+    @Override public void onChange(String workerGroup, List<RpcRegisterMessage> messages) {
+      if (state == RecoveryState.STANDBY) {
+        return;
+      }
+      try {
+        if (workerLock.tryLock()) {
+          if (messages == null || messages.isEmpty()) {
+            List<WorkerInfo> workerInfos = _workerGroups.get(workerGroup);
+            for (WorkerInfo workerInfo : workerInfos) {
+              _idToWorker.remove(workerInfo.id);
+            }
+            _workerGroups.remove(workerGroup);
+          }
+          // workerId -> workerInfo
+          List<WorkerInfo> newWorkers = Lists.newArrayList();
+          for (RpcRegisterMessage message : messages) {
+            String workerId = message.detail.getWorkerId();
+            WorkerInfo workerInfo = _idToWorker.get(workerId);
+            if (workerInfo != null && workerInfo.endpoint.address().equals(message.address)) {
+              newWorkers.add(workerInfo);
+            } else {
+              RpcEndpointRef workerRef = rpcEnv.setupEndpointRef(message.address, Worker.ENDPOINT_NAME);
+              WorkerInfo newWorkerInfo = new WorkerInfo(workerId, workerGroup, workerRef);
+              newWorkers.add(newWorkerInfo);
+              _idToWorker.put(workerId, newWorkerInfo);
+            }
+          }
+          _workerGroups.put(workerGroup, newWorkers);
+        }
+      } finally {
+        if (workerLock.isHeldByCurrentThread()) {
+          workerLock.unlock();
         }
       }
     }
@@ -526,14 +409,12 @@ public class Master extends RpcEndpoint {
       "Master must start with property file path param.");
     String propertyFilePath = args[0];
     DTSConf conf = DTSConfUtil.readFile(propertyFilePath);
-    String host = conf.get("dts.master.host");
-    int port = conf.getInt("dts.master.port", 8088);
-    NettyRpcEnv rpcEnv = startRpcEnvAndEndpoint(host, port, conf);
+    RpcEnv rpcEnv = launchMaster(conf);
     rpcEnv.awaitTermination();
   }
 
-  private static NettyRpcEnv startRpcEnvAndEndpoint(String host, int port, DTSConf conf) {
-    NettyRpcEnv rpcEnv = NettyRpcEnv.create(conf, host, port, false);
+  public static RpcEnv launchMaster(DTSConf conf) {
+    RpcEnv rpcEnv = RpcEnv.create(SYSTEM_NAME, AddressUtil.getLocalHost(), 0, conf, false);
     TaskQueueContext context = new TaskQueueContext(conf);
     rpcEnv.setupEndpoint(ENDPOINT_NAME,
       new Master(rpcEnv, rpcEnv.address(), conf, context));

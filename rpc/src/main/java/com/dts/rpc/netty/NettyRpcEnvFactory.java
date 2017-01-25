@@ -18,7 +18,8 @@ import java.net.BindException;
 public class NettyRpcEnvFactory implements RpcEnvFactory {
   private final Logger logger = LoggerFactory.getLogger(getClass());
 
-  @Override public RpcEnv create(RpcEnvConfig rpcEnvConfig) {
+  @Override
+  public RpcEnv create(RpcEnvConfig rpcEnvConfig) {
     DTSConf conf = rpcEnvConfig.conf;
     SerializerInstance serializerInstance = new SerializerInstance(conf);
     NettyRpcEnv nettyRpcEnv = new NettyRpcEnv(conf, serializerInstance, rpcEnvConfig.host);

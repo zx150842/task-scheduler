@@ -4,13 +4,17 @@ import com.dts.core.queue.ExecutingTaskQueue;
 import com.dts.core.queue.TaskQueueContext;
 import com.dts.core.util.CuratorUtil;
 import com.dts.core.util.Tuple2;
+import com.dts.core.worker.Worker;
 import com.dts.rpc.DTSConf;
 import com.dts.rpc.RpcEnv;
+import com.dts.rpc.exception.DTSException;
 import com.dts.rpc.netty.NettyRpcEnv;
 import com.dts.rpc.util.SerializerInstance;
 import com.google.common.collect.Lists;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.zookeeper.CreateMode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.util.List;
@@ -19,6 +23,8 @@ import java.util.List;
  * @author zhangxin
  */
 public class ZooKeeperPersistenceEngine {
+  private final Logger logger = LoggerFactory.getLogger(getClass());
+
   private final DTSConf conf;
   private final SerializerInstance serializer;
   private final String WORKING_DIR;
@@ -40,13 +46,13 @@ public class ZooKeeperPersistenceEngine {
     try {
       zk.delete().forPath(WORKING_DIR + "/" + name);
     } catch (Exception e) {
-      throw new RuntimeException(e);
+      throw new DTSException(e);
     }
   }
 
-  public final Tuple2<WorkerInfo[], ClientInfo[]> readPersistedData(NettyRpcEnv rpcEnv) {
-    WorkerInfo[] workerInfos = read("worker_");
-    ClientInfo[] clientInfos = read("client_");
+  public final Tuple2<List<WorkerInfo>, List<ClientInfo>> readPersistedData(RpcEnv rpcEnv) {
+    List<WorkerInfo> workerInfos = read("worker_");
+    List<ClientInfo> clientInfos = read("client_");
     return new Tuple2<>(workerInfos, clientInfos);
   }
 
@@ -66,7 +72,7 @@ public class ZooKeeperPersistenceEngine {
     unpersist("client_" + client.id);
   }
 
-  public <T> T[] read(String prefix) {
+  public <T> List<T> read(String prefix) {
     try {
       List<T> result = Lists.newArrayList();
       List<String> paths = zk.getChildren().forPath(WORKING_DIR);
@@ -75,9 +81,9 @@ public class ZooKeeperPersistenceEngine {
           result.add(deserializeFromFile(path));
         }
       }
-      return (T[]) result.toArray();
+      return result;
     } catch (Exception e) {
-      throw new RuntimeException(e);
+      throw new DTSException(e);
     }
   }
 
@@ -92,7 +98,7 @@ public class ZooKeeperPersistenceEngine {
     try {
       zk.create().withMode(CreateMode.PERSISTENT).forPath(path, bytes);
     } catch (Exception e) {
-      throw new RuntimeException(e);
+      throw new DTSException(e);
     }
   }
 
@@ -101,7 +107,13 @@ public class ZooKeeperPersistenceEngine {
       byte[] fileData = zk.getData().forPath(WORKING_DIR + "/" + fileName);
       return serializer.deserialize(ByteBuffer.wrap(fileData));
     } catch (Exception e) {
-      throw new RuntimeException(e);
+      logger.warn("Exception while reading persisted file, deleting", e);
+      try {
+        zk.delete().forPath(WORKING_DIR + "/" + fileName);
+      } catch (Exception e1) {
+        // do nothing
+      }
+      throw new DTSException(e);
     }
   }
 }

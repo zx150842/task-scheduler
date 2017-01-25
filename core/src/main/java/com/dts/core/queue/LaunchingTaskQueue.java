@@ -1,6 +1,6 @@
 package com.dts.core.queue;
 
-import com.dts.core.TaskInfo;
+import com.dts.core.TriggeredTaskInfo;
 
 import java.util.List;
 
@@ -9,9 +9,7 @@ import java.util.List;
  */
 public interface LaunchingTaskQueue {
 
-  boolean add(TaskInfo task);
+  boolean add(TriggeredTaskInfo task);
 
   boolean remove(String id);
-
-  List<TaskInfo> getByTaskId(String taskId);
 }

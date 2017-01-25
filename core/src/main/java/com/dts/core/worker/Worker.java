@@ -1,19 +1,23 @@
 package com.dts.core.worker;
 
-import com.dts.core.TaskConf;
-import com.dts.core.TaskInfo;
+import com.dts.core.TriggeredTaskInfo;
 import com.dts.core.master.Master;
-import com.dts.core.util.ThreadUtils;
+import com.dts.core.util.DataTypeUtil;
+import com.dts.core.util.ThreadUtil;
 import com.dts.rpc.*;
-import com.dts.rpc.netty.NettyRpcEnv;
+import com.dts.rpc.exception.DTSException;
+import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryMXBean;
 import java.lang.management.MemoryUsage;
 import java.lang.management.OperatingSystemMXBean;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
@@ -25,17 +29,19 @@ import static com.dts.core.DeployMessages.*;
  * @author zhangxin
  */
 public class Worker extends RpcEndpoint {
-  private final Logger logger = LoggerFactory.getLogger(getClass());
+  private static final Logger logger = LoggerFactory.getLogger(Worker.class);
 
-  private final NettyRpcEnv rpcEnv;
   private final DTSConf conf;
   private RpcAddress[] masterRpcAddresses;
 
-  private final String host;
-  private final int port;
-  private final int cores;
-  private final long memory;
-  private final ScheduledExecutorService forwordMessageScheduler;
+  public final String workerId;
+  public final String workerGroupId;
+  public final String host;
+  public final int port;
+  public final int cores;
+  public final long memory;
+
+  private final ScheduledExecutorService forwardMessageScheduler;
 
   private final long HEARTBEAT_MILLIS;
 
@@ -49,10 +55,8 @@ public class Worker extends RpcEndpoint {
   private RpcEndpointRef master;
   private boolean registered = false;
   private boolean connected = false;
-  private final String workerId;
-  private final String workerGroupId;
 
-  private Future[] registerMasterFutrues = null;
+  private Future[] registerMasterFutures = null;
   private ScheduledFuture registrationRetryTimer = null;
   private final ThreadPoolExecutor registerMasterThreadPool;
   private int connectionAttemptCount = 0;
@@ -61,31 +65,29 @@ public class Worker extends RpcEndpoint {
   private int memoryUsed = 0;
 
   private final TaskDispatcher taskDispatcher;
+  private static final Gson GSON = new Gson();
 
-  private static final String ENDPOINT_NAME = "Worker";
+  public static final String SYSTEM_NAME = "dtsWorker";
+  public static final String ENDPOINT_NAME = "Worker";
 
-  public Worker(NettyRpcEnv rpcEnv, DTSConf conf) {
+  public Worker(RpcEnv rpcEnv, int cores, long memory, RpcAddress[] masterAddresses, DTSConf conf) {
     super(rpcEnv);
-    this.rpcEnv = rpcEnv;
     this.conf = conf;
 
-    this.host = rpcEnv.address().getHost();
-    this.port = rpcEnv.address().getPort();
+    this.host = rpcEnv.address().host;
+    this.port = rpcEnv.address().port;
     this.HEARTBEAT_MILLIS = conf.getLong("dts.worker.timeout", 60) * 1000 / 4;
 
     this.workerId = conf.get("dts.worker.id");
     this.workerGroupId = conf.get("dts.worker.groupId");
 
-    OperatingSystemMXBean system = ManagementFactory.getOperatingSystemMXBean();
-    MemoryMXBean memory = ManagementFactory.getMemoryMXBean();
-    MemoryUsage heapMemory = memory.getHeapMemoryUsage();
+    this.cores = cores;
+    this.memory = memory;
+    this.masterRpcAddresses = masterAddresses;
 
-    this.cores = system.getAvailableProcessors();
-    this.memory = heapMemory.getInit();
-
-    this.forwordMessageScheduler =
-        ThreadUtils.newDaemonSingleThreadScheduledExecutor("worker-forward-message-scheduler");
-    this.registerMasterThreadPool = ThreadUtils.newDaemonCachedThreadPool(
+    this.forwardMessageScheduler =
+        ThreadUtil.newDaemonSingleThreadScheduledExecutor("worker-forward-message-scheduler");
+    this.registerMasterThreadPool = ThreadUtil.newDaemonCachedThreadPool(
         "worker-register-master-threadpool", masterRpcAddresses.length, 60);
 
     this.taskDispatcher = new TaskDispatcher(conf, self());
@@ -105,11 +107,11 @@ public class Worker extends RpcEndpoint {
   }
 
   private void cancelLastRegistrationRetry() {
-    if (registerMasterFutrues != null) {
-      for (Future future : registerMasterFutrues) {
+    if (registerMasterFutures != null) {
+      for (Future future : registerMasterFutures) {
         future.cancel(true);
       }
-      registerMasterFutrues = null;
+      registerMasterFutures = null;
       registrationRetryTimer.cancel(true);
       registrationRetryTimer = null;
     }
@@ -140,7 +142,7 @@ public class Worker extends RpcEndpoint {
       MasterChanged masterEndpoint = (MasterChanged) o;
       logger.info("Master has changed, new master is at {}", masterEndpoint.master.address());
       changeMaster(masterEndpoint.master);
-      context.reply(new MasterChangeAckFromWorker(workerId, coresUsed, memoryUsed));
+//      context.reply(new MasterChangeAckFromWorker(workerId, coresUsed, memoryUsed));
     }
 
     else if (o instanceof RequestWorkerState) {
@@ -149,31 +151,36 @@ public class Worker extends RpcEndpoint {
 
     else if (o instanceof LaunchTask) {
       LaunchTask msg = (LaunchTask)o;
-      TaskInfo task = msg.task;
+      List<Object> params = deserializeTaskParams(msg.task.getParams());
+      TaskWrapper tw = new TaskWrapper(msg.task, params);
       // TODO schedule task
       String message;
       try {
-        if (taskDispatcher.addTask(task)) {
+        if (taskDispatcher.addTask(tw)) {
           message = "success";
         } else {
           message = "Failed to add task to worker task queue";
         }
       } catch (Exception e) {
-        message = e.toString();
+        message = Throwables.getStackTraceAsString(e);
       }
-      context.reply(new LaunchedTask(task, message));
+      context.reply(new LaunchedTask(msg.task, message));
     }
 
-    else if (o instanceof KillTask) {
-      KillTask msg = (KillTask)o;
+    else if (o instanceof KillRunningTask) {
+      KillRunningTask msg = (KillRunningTask)o;
       // TODO kill task
       String message;
-      if (taskDispatcher.stopTask(msg.task.getId())) {
+      if (taskDispatcher.stopTask(msg.task.getSysId())) {
         message = "success";
       } else {
         message = "Failed to stop task: " + msg.task;
       }
       context.reply(new KilledTask(msg.task, message));
+    }
+
+    else {
+      context.sendFailure(new DTSException("Worker not support receive msg type: " + o.getClass().getCanonicalName()));
     }
   }
 
@@ -189,7 +196,7 @@ public class Worker extends RpcEndpoint {
 
   @Override
   public void onStop() {
-    forwordMessageScheduler.shutdownNow();
+    forwardMessageScheduler.shutdownNow();
     registerMasterThreadPool.shutdownNow();
   }
 
@@ -208,7 +215,7 @@ public class Worker extends RpcEndpoint {
       logger.info("Successfully registered with master {}", masterEndpoint.address());
       registered = true;
       changeMaster(masterEndpoint);
-      forwordMessageScheduler.scheduleAtFixedRate(new Runnable() {
+      forwardMessageScheduler.scheduleAtFixedRate(new Runnable() {
         @Override
         public void run() {
           self().send(new SendHeartbeat());
@@ -235,12 +242,12 @@ public class Worker extends RpcEndpoint {
     } else if (connectionAttemptCount <= TOTAL_REGISTRATION_RETRIES) {
       logger.info("Retrying connection to master (attempt # {})", connectionAttemptCount);
       if (master != null) {
-        if (registerMasterFutrues != null) {
-          for (Future future : registerMasterFutrues) {
+        if (registerMasterFutures != null) {
+          for (Future future : registerMasterFutures) {
             future.cancel(true);
           }
           RpcAddress masterAddress = master.address();
-          registerMasterFutrues = new Future[] {registerMasterThreadPool.submit(new Runnable() {
+          registerMasterFutures = new Future[] {registerMasterThreadPool.submit(new Runnable() {
             @Override
             public void run() {
               try {
@@ -259,16 +266,16 @@ public class Worker extends RpcEndpoint {
           })};
         }
       } else {
-        if (registerMasterFutrues != null) {
-          for (Future future : registerMasterFutrues) {
+        if (registerMasterFutures != null) {
+          for (Future future : registerMasterFutures) {
             future.cancel(true);
           }
-          registerMasterFutrues = tryRegisterAllMasters();
+          registerMasterFutures = tryRegisterAllMasters();
         }
       }
 
       if (connectionAttemptCount == INITIAL_REGISTRATION_RETRIES) {
-        registrationRetryTimer = forwordMessageScheduler.scheduleAtFixedRate(new Runnable() {
+        registrationRetryTimer = forwardMessageScheduler.scheduleAtFixedRate(new Runnable() {
           @Override
           public void run() {
             self().send(new ReregisterWithMaster());
@@ -285,8 +292,8 @@ public class Worker extends RpcEndpoint {
   private void registerWithMaster() {
     if (registrationRetryTimer == null) {
       registered = false;
-      registerMasterFutrues = tryRegisterAllMasters();
-      registrationRetryTimer = forwordMessageScheduler.scheduleAtFixedRate(new Runnable() {
+      registerMasterFutures = tryRegisterAllMasters();
+      registrationRetryTimer = forwardMessageScheduler.scheduleAtFixedRate(new Runnable() {
         @Override
         public void run() {
           self().send(new ReregisterWithMaster());
@@ -301,7 +308,7 @@ public class Worker extends RpcEndpoint {
 
   private void registerWithMaster(RpcEndpointRef masterEndpoint) {
     Future future = masterEndpoint
-        .ask(new RegisterWorker(workerId, host, port, self(), cores, memory, workerGroupId));
+        .ask(new RegisterWorker(workerId, self(), cores, memory, workerGroupId));
     try {
       RegisterResponse msg = (RegisterResponse) future.get();
       handleRegisterResponse(msg);
@@ -332,12 +339,39 @@ public class Worker extends RpcEndpoint {
     return futures.toArray(new Future[futures.size()]);
   }
 
-  private static NettyRpcEnv startRpcEnvAndEndpoint(
-    String host, int port, int cores, long memory,
-    String[] masterUrls, DTSConf conf) {
-    NettyRpcEnv rpcEnv = NettyRpcEnv.create(conf, host, port, true);
-    rpcEnv.setupEndpoint(ENDPOINT_NAME, new Worker(rpcEnv, conf));
-    return rpcEnv;
+  public static Worker launchWorker(
+    String host, int port, String[] masterUrls, DTSConf conf) {
+    RpcEnv rpcEnv = RpcEnv.create(SYSTEM_NAME, host, port, conf, false);
+    List<RpcAddress> masterAddresses = Lists.newArrayList();
+    for (String masterUrl : masterUrls) {
+      RpcAddress masterAddress = RpcAddress.fromURL(masterUrl);
+      if (masterAddress == null) {
+        logger.warn("Ignore masterUrl: {}, masterUrl format should be host:port", masterUrl);
+        continue;
+      }
+      masterAddresses.add(masterAddress);
+    }
+
+    OperatingSystemMXBean system = ManagementFactory.getOperatingSystemMXBean();
+    MemoryUsage heapMemory = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage();
+
+    int cores = system.getAvailableProcessors();
+    long memory = heapMemory.getInit();
+
+    Worker worker = new Worker(rpcEnv, cores, memory, masterAddresses.toArray(new RpcAddress[0]), conf);
+    rpcEnv.setupEndpoint(ENDPOINT_NAME, worker);
+    return worker;
   }
 
+  private List<Object> deserializeTaskParams(String params) {
+    List<Object> paramValues = Lists.newArrayList();
+    if (StringUtils.isBlank(params)) {
+      return paramValues;
+    }
+    LinkedHashMap<String, String> typeValues = GSON.fromJson(params, new TypeToken<LinkedHashMap<String, String>>(){}.getType());
+    for (String type : typeValues.keySet()) {
+      paramValues.add(DataTypeUtil.convertToPrimitiveType(type, typeValues.get(type)));
+    }
+    return paramValues;
+  }
 }

@@ -1,7 +1,10 @@
 package com.dts.core.queue;
 
-import com.dts.core.TaskInfo;
+import com.dts.core.DeployMessages;
+import com.dts.core.TriggeredTaskInfo;
 import com.dts.rpc.DTSConf;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -9,29 +12,35 @@ import java.util.List;
  * @author zhangxin
  */
 public class TaskScheduler {
+  private final Logger logger = LoggerFactory.getLogger(TaskScheduler.class);
 
   private final DTSConf conf;
   private final ExecutableTaskQueue executableTaskQueue;
-  private final LaunchingTaskQueue launchingTaskQueue;
+  private final ExecutingTaskQueue executingTaskQueue;
 
   public TaskScheduler(DTSConf conf,
     ExecutableTaskQueue executableTaskQueue,
-    LaunchingTaskQueue launchingTaskQueue) {
+    ExecutingTaskQueue executingTaskQueue) {
     this.conf = conf;
     this.executableTaskQueue = executableTaskQueue;
-    this.launchingTaskQueue = launchingTaskQueue;
+    this.executingTaskQueue = executingTaskQueue;
   }
 
-  public TaskInfo schedule(String workerGroup) {
+  public TriggeredTaskInfo schedule(String workerGroup) {
     int taskParallelRunNum = conf.getInt("dts.task.parallel.run.num", 1);
-    List<TaskInfo> tasks = executableTaskQueue.getManualTriggerTasks(workerGroup);
-    if (tasks != null) {
+    List<TriggeredTaskInfo> tasks = executableTaskQueue.getManualTriggerTasks(workerGroup);
+    if (tasks != null && tasks.size() > 0) {
       return tasks.get(0);
     }
     tasks = executableTaskQueue.getAutoTriggerTasks(workerGroup);
-    for (TaskInfo task : tasks) {
-      List<TaskInfo> runningTasks = launchingTaskQueue.getByTaskId(task.taskConf.getTaskId());
+    if (tasks == null || tasks.isEmpty()) {
+      return null;
+    }
+    for (TriggeredTaskInfo task : tasks) {
+      List<TriggeredTaskInfo> runningTasks = executingTaskQueue.getByTaskId(task.getTaskId());
       if (runningTasks != null && runningTasks.size() > taskParallelRunNum) {
+        logger.warn("Task {} current running task is {} over 'dts.task.parallel.run.num' {}",
+          runningTasks.size(), taskParallelRunNum);
         continue;
       }
       return task;

@@ -19,6 +19,9 @@ subprojects {
         SPRING_VERSION = '4.3.4.RELEASE'
         MOCKITO_VERSION = '2.5.5'
         NETTY_VERSION = '4.1.6.Final'
+        MYBATIS_VERSION = '3.4.2'
+        GSON_VERSION = "2.8.0"
+        MYSQL_VERSION = "6.0.5"
     }
 
     dependencies {
@@ -26,6 +29,8 @@ subprojects {
         compile group: 'com.google.guava', name: 'guava', version: "$GUAVA_VERSION"
         compile group: 'org.apache.commons', name: 'commons-lang3', version: "$COMMONS_LANG_VERSION"
         compile group: 'com.google.code.findbugs', name: 'jsr305', version: "$JSR305_VERSION"
+        compile group: 'com.google.code.gson', name: 'gson', version: "$GSON_VERSION"
+        runtime group: 'mysql', name: 'mysql-connector-java', version: "$MYSQL_VERSION"
         testCompile group: 'junit', name: 'junit', version: '4+'
         testCompile group: 'org.mockito', name: 'mockito-core', version: "$MOCKITO_VERSION"
     }

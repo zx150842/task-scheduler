@@ -10,7 +10,7 @@ class ElectedLeader extends MasterMessages{}
 
 class RevokedLeadership extends MasterMessages{}
 
-class CheckForWorkerTimeOut extends MasterMessages{}
+class SyncZKWorkers extends MasterMessages{}
 
 class BeginRecovery extends MasterMessages{}
 

@@ -1,6 +1,7 @@
 package com.dts.core.util;
 
 import com.dts.rpc.DTSConf;
+import com.dts.rpc.exception.DTSException;
 
 import java.io.IOException;
 import java.util.Properties;
@@ -20,7 +21,7 @@ public class DTSConfUtil {
       }
       return conf;
     } catch (IOException e) {
-      throw new RuntimeException(e);
+      throw new DTSException(e);
     }
   }
 }

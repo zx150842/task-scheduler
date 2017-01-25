@@ -1,5 +1,6 @@
 package com.dts.core.queue;
 
+import com.dts.core.JobConf;
 import com.dts.core.TaskConf;
 
 import java.util.List;
@@ -9,27 +10,15 @@ import java.util.List;
  */
 public interface CronTaskQueue {
 
-  boolean add(TaskConf task);
+  List<JobConf> getAllValid();
 
-  boolean update(TaskConf task);
+  boolean containJob(String jobId);
 
-  boolean remove(String taskId);
+  JobConf getJob(String jobId);
 
-  List<TaskConf> getAllValid();
+  TaskConf getNextToTriggerTask(String jobId, String taskName);
 
-  boolean addBatch(List<TaskConf> tasks);
+  List<JobConf> getNextTriggerJobs(long noLaterThan);
 
-  boolean updateBatch(List<TaskConf> tasks);
-
-  boolean removeBatch(List<String> taskIds);
-
-  List<String> getTaskId(String taskGroupId);
-
-  boolean containTask(String taskId);
-
-  boolean containTaskGroup(String taskGroupId);
-
-  TaskConf getTask(String taskId);
-
-  List<TaskConf> getTasks(String taskGroupId);
+  void triggeredJob(JobConf jobConf);
 }

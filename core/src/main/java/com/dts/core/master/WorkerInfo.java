@@ -3,30 +3,28 @@ package com.dts.core.master;
 import com.dts.rpc.RpcEndpoint;
 import com.dts.rpc.RpcEndpointRef;
 
+import java.io.Serializable;
+
 /**
  * @author zhangxin
  */
-public class WorkerInfo {
+public class WorkerInfo implements Serializable {
 
   public final String id;
   public final String host;
   public final int port;
-  public final int cores;
-  public final long memory;
   public final RpcEndpointRef endpoint;
   public final String groupId;
 
-  private WorkerState state;
-  private int coresUsed;
-  private long memoryUsed;
-  private long lastHeartbeat;
+  transient private WorkerState state;
+  transient private int coresUsed;
+  transient private long memoryUsed;
+  transient private long lastHeartbeat;
 
-  public WorkerInfo(String id, String host, int port, int cores, long memory, RpcEndpointRef endpoint, String groupId) {
+  public WorkerInfo(String id, String groupId, RpcEndpointRef endpoint) {
     this.id = id;
-    this.host = host;
-    this.port = port;
-    this.cores = cores;
-    this.memory = memory;
+    this.host = endpoint.address().host;
+    this.port = endpoint.address().port;
     this.endpoint = endpoint;
     this.groupId = groupId;
     init();

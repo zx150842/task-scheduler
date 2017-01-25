@@ -84,7 +84,7 @@ public class NettyRpcEndpointRef extends RpcEndpointRef implements Serializable 
   @Override
   public boolean equals(Object other) {
     if (other instanceof NettyRpcEndpointRef) {
-      return address == ((NettyRpcEndpointRef) other).address;
+      return address.equals(((NettyRpcEndpointRef) other).address);
     }
     return false;
   }

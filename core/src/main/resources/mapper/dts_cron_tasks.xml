@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.dts.core.queue.mysql.impl.CronTaskDao">
+    <resultMap id="baseMap" type="com.dts.core.TriggeredTaskInfo">
+        <result column="job_id" property="jobId"/>
+        <result column="task_id" property="taskId"/>
+        <result column="task_name" property="taskName"/>
+        <result column="worker_group" property="workerGroup"/>
+        <result column="sys_id" property="sysId"/>
+        <result column="params" property="params"/>
+        <result column="manual_trigger" property="manualTrigger"/>
+        <result column="worker_id" property="workerId"/>
+        <result column="status" property="status"/>
+        <result column="executable_time" property="executableTime"/>
+        <result column="launching_time" property="launchingTime"/>
+        <result column="launched_time" property="launchedTime"/>
+        <result column="executing_time" property="executingTime"/>
+    </resultMap>
+
+    <sql id="tableName">
+        dts_cron_tasks
+    </sql>
+
+    <sql id="columnAll">
+        job_id,
+        task_id,
+        task_name,
+        worker_group,
+        sys_id,
+        params,
+        manual_trigger,
+        worker_id,
+        executable_time,
+        status
+    </sql>
+
+    <!--
+    status = 0 删除
+    status = 1 executable
+    status = 2 launching
+    status = 3 launched
+    status = 4 executing
+    -->
+
+    <insert id="add">
+      insert into <include refid="tableName"/>
+        (<include refid="columnAll"/>)
+        values (#{jobId}, #{taskId}, #{taskName}, #{workerGroup}, #{sysId}, #{params},
+        #{manualTrigger}, #{workerId}, now(), 1)
+    </insert>
+
+    <update id="delete">
+        update <include refid="tableName"/>
+        set status = 0
+        where sys_id = #{sysId}
+    </update>
+
+    <update id="changeToExecutable">
+        update <include refid="tableName"/>
+        set status = 1, executable_time = now()
+        where sys_id = #{sysId}
+    </update>
+
+    <update id="changeToLaunching">
+        update <include refid="tableName"/>
+        set status = 2, launching_time = now()
+        where sys_id = #{sysId}
+    </update>
+
+    <update id="changeTolaunched">
+        update <include refid="tableName"/>
+        set status = 3, launched_time = now()
+        where sys_id = #{sysId}
+    </update>
+
+    <update id="changeToExecuting">
+        update <include refid="tableName"/>
+        set status = 4, executing_time = now()
+        where sys_id = #{sysId}
+    </update>
+
+    <select id="getExecutableByWorkerGroup" resultMap="baseMap">
+        select <include refid="columnAll"/>
+        from <include refid="tableName"/>
+        where
+        status = 1 and worker_group = #{workerGroup} and manual_trigger = #{manual}
+    </select>
+
+    <select id="getExecutingByTaskId" resultMap="baseMap">
+        select <include refid="columnAll"/>
+        from <include refid="tableName"/>
+        where status = 4 and task_id = #{taskId}
+    </select>
+</mapper>

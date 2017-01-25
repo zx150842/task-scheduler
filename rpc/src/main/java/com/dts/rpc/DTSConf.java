@@ -32,7 +32,7 @@ public class DTSConf implements Cloneable {
   }
 
   public String get(String key) {
-    if (settings.containsKey(key)) { settings.get(key); }
+    if (settings.containsKey(key)) { return settings.get(key); }
     throw new NoSuchElementException(key);
   }
 

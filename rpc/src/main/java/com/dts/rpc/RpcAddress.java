@@ -1,6 +1,8 @@
 package com.dts.rpc;
 
 import com.google.common.base.Objects;
+import com.sun.deploy.util.StringUtils;
+import org.apache.commons.lang3.math.NumberUtils;
 
 import java.io.Serializable;
 
@@ -17,6 +19,16 @@ public class RpcAddress implements Serializable {
     this.host = host;
     this.port = port;
     this.hostPort = host + ":" + port;
+  }
+
+  public static RpcAddress fromURL(String url) {
+    String[] hostPort = StringUtils.splitString(url, ":");
+    if (hostPort == null || hostPort.length != 2) {
+      return null;
+    }
+    String host = hostPort[0];
+    int port = NumberUtils.toInt(hostPort[1]);
+    return new RpcAddress(host, port);
   }
 
   @Override

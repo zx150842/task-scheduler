@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * @author zhangxin
  */
-public class NettyRpcEnv implements RpcEnv {
+public class NettyRpcEnv extends RpcEnv {
   private final Logger logger = LoggerFactory.getLogger(NettyRpcEnv.class);
 
   private final String host;

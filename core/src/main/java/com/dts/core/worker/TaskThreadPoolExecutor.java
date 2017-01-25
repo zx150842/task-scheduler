@@ -1,7 +1,7 @@
 package com.dts.core.worker;
 
 import com.dts.core.DeployMessages;
-import com.dts.core.TaskInfo;
+import com.dts.core.TriggeredTaskInfo;
 import com.dts.rpc.RpcEndpointRef;
 import com.google.common.collect.Maps;
 import org.slf4j.Logger;
@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ThreadFactory;
@@ -36,7 +37,7 @@ public class TaskThreadPoolExecutor extends ThreadPoolExecutor {
     TaskRunner runner = (TaskRunner)r;
     try {
       runner.lock.lock();
-      taskRunThreads.put(runner.task.getId(), t);
+      taskRunThreads.put(runner.task.getSysId(), t);
       endpoint.send(new DeployMessages.ExecutingTask(runner.task, t.getName()));
     } finally {
       runner.lock.unlock();
@@ -48,7 +49,7 @@ public class TaskThreadPoolExecutor extends ThreadPoolExecutor {
     TaskRunner runner = (TaskRunner)r;
     try {
       runner.lock.lock();
-      taskRunThreads.remove(runner.task.getId());
+      taskRunThreads.remove(runner.task.getSysId());
       if (t == null) {
         endpoint.send(new DeployMessages.FinishTask(runner.task, "success"));
       } else {
@@ -84,22 +85,23 @@ public class TaskThreadPoolExecutor extends ThreadPoolExecutor {
   public static class TaskRunner implements Runnable {
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
-    public final TaskInfo task;
+    public final TriggeredTaskInfo task;
     public final Method method;
     public final Object instance;
     public final ReentrantLock lock = new ReentrantLock();
 
-    public TaskRunner(TaskInfo task, Method method, Object instance) {
+    public TaskRunner(TriggeredTaskInfo task, Method method, Object instance) {
       this.task = task;
       this.method = method;
       this.instance = instance;
     }
 
     @Override public void run() {
-      LinkedHashMap<String, String> params = task.taskConf.getParams();
-      String[] args = null;
+      // TODO 解析params
+      List<Object> params = null;
+      Object[] args = null;
       if (params != null && !params.isEmpty()) {
-        args = params.values().toArray(new String[] {});
+        args = params.toArray(new Object[] {});
       }
       try {
         method.invoke(instance, args);

@@ -27,7 +27,7 @@ public class ZooKeeperLeaderElectionAgent implements LeaderLatchListener {
   public ZooKeeperLeaderElectionAgent(Master master, DTSConf conf) {
     this.master = master;
     this.conf = conf;
-    WORKING_DIR = conf.get("dts.master.zookeeper.dir", "/dts") + "/leader_election";
+    WORKING_DIR = conf.get("dts.zookeeper.dir", "/dts") + "/leader_election";
     start();
   }
 

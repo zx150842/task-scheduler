@@ -1,20 +1,17 @@
 package com.dts.core.queue;
 
+import com.dts.core.JobConf;
 import com.dts.core.TaskConf;
-import com.dts.core.TaskGroup;
-import com.dts.core.TaskInfo;
+import com.dts.core.TriggeredTaskInfo;
 import com.dts.core.TaskStatus;
-import com.dts.core.queue.kafka.*;
-import com.dts.core.queue.memory.*;
 import com.dts.core.queue.mysql.*;
-import com.dts.core.util.CronExpressionUtil;
+import com.dts.core.util.IdUtil;
+import com.dts.core.util.ThreadUtil;
 import com.dts.rpc.DTSConf;
-import org.apache.commons.lang3.time.DateUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.util.Date;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -22,6 +19,7 @@ import java.util.concurrent.TimeUnit;
  * @author zhangxin
  */
 public class TaskQueueContext {
+  private final Logger logger = LoggerFactory.getLogger(TaskQueueContext.class);
 
   private final DTSConf conf;
   private final CronTaskQueue cronTaskQueue;
@@ -31,62 +29,48 @@ public class TaskQueueContext {
   private final ExecutingTaskQueue executingTaskQueue;
   private final FinishedTaskQueue finishedTaskQueue;
   private final TaskScheduler taskScheduler;
-  private final WorkerGroupQueue workerGroupQueue;
 
-  private final ScheduledExecutorService backend = Executors.newScheduledThreadPool(10);
+  private final ScheduledExecutorService backend;
+
+  private final long TASK_TRIGGER_INTERVAL_MS;
 
   public TaskQueueContext(DTSConf conf) {
     this.conf = conf;
-    String queueType = conf.get("dts.master.queue.type", "memory");
-    if ("memory".equals(queueType))  {
-      cronTaskQueue = new MemoryCronTaskQueue(conf);
-      executableTaskQueue = new MemoryExecutableTaskQueue(conf);
-      launchingTaskQueue = new MemoryLaunchingTaskQueue(conf);
-      launchedTaskQueue = new MemoryLaunchedTaskQueue(conf);
-      executingTaskQueue = new MemoryExecutingTaskQueue(conf);
-      finishedTaskQueue = new MemoryFinishedTaskQueue(conf);
-      workerGroupQueue = new MemoryWorkerGroupQueue(conf);
-    } else if ("mysql".equals(queueType)) {
-      cronTaskQueue = new MysqlCronTaskQueue();
+    TASK_TRIGGER_INTERVAL_MS = conf.getLong("dts.task.trigger.intervalMs", 1000);
+    String queueType = conf.get("dts.task.queue.type", "mysql");
+   if ("mysql".equals(queueType)) {
+      cronTaskQueue = new MysqlCronTaskQueue(conf);
       executableTaskQueue = new MysqlExecutableTaskQueue();
       launchingTaskQueue = new MysqlLaunchingTaskQueue();
       launchedTaskQueue = new MysqlLaunchedTaskQueue();
       executingTaskQueue = new MysqlExecutingTaskQueue();
       finishedTaskQueue = new MysqlFinishedTaskQueue();
-      workerGroupQueue = new MysqlWorkerGroupQueue();
-    } else if ("kafka".equals(queueType)) {
-      cronTaskQueue = new KafkaCronTaskQueue();
-      executableTaskQueue = new KafkaExecutableTaskQueue();
-      launchingTaskQueue = new KafkaLaunchingTaskQueue();
-      launchedTaskQueue = new KafkaLaunchedTaskQueue();
-      executingTaskQueue = new KafkaExecutingTaskQueue();
-      finishedTaskQueue = new KafkaFinishedTaskQueue();
-      workerGroupQueue = new KafkaWorkerGroupQueue();
     } else {
-      throw new IllegalArgumentException("");
+      throw new IllegalArgumentException("Not Support 'dts.task.queue.type'= " + queueType);
     }
-    this.taskScheduler = new TaskScheduler(conf, executableTaskQueue, launchingTaskQueue);
+    this.taskScheduler = new TaskScheduler(conf, executableTaskQueue, executingTaskQueue);
+    this.backend = ThreadUtil.newDaemonSingleThreadScheduledExecutor("task-generator");
   }
 
   public void start() {
-    backend.scheduleAtFixedRate(new CronTaskGenerator(),0L,1L, TimeUnit.SECONDS);
+    backend.scheduleAtFixedRate(new CronTaskGenerator(),0L, TASK_TRIGGER_INTERVAL_MS / 2, TimeUnit.MILLISECONDS);
   }
 
-  public synchronized TaskInfo get2LaunchingTask(String workerGroup) {
-    TaskInfo task = taskScheduler.schedule(workerGroup);
+  public synchronized TriggeredTaskInfo get2LaunchingTask(String workerGroup) {
+    TriggeredTaskInfo task = taskScheduler.schedule(workerGroup);
     if (task != null) {
       launchingTaskQueue.add(task);
-      executableTaskQueue.remove(task.getId());
+      executableTaskQueue.remove(task.getSysId());
     }
     return task;
   }
 
-  public synchronized boolean launchedTask(TaskInfo task) {
+  public synchronized boolean launchedTask(TriggeredTaskInfo task) {
     boolean success;
     if (task != null) {
       success = launchedTaskQueue.add(task);
       if (success) {
-        success = launchingTaskQueue.remove(task.getId());
+        success = launchingTaskQueue.remove(task.getSysId());
       }
     } else {
       success = false;
@@ -94,12 +78,12 @@ public class TaskQueueContext {
     return success;
   }
 
-  public synchronized boolean executingTask(TaskInfo task) {
+  public synchronized boolean executingTask(TriggeredTaskInfo task) {
     boolean success;
     if (task != null) {
       success = executingTaskQueue().add(task);
       if (success) {
-        launchedTaskQueue.remove(task.getId());
+        launchedTaskQueue.remove(task.getSysId());
       }
     } else {
       success = false;
@@ -107,96 +91,37 @@ public class TaskQueueContext {
     return success;
   }
 
-  public synchronized TaskInfo completeTask(TaskInfo task) {
+  public synchronized void completeTask(TriggeredTaskInfo task) {
     finishedTaskQueue.add(task);
-    executingTaskQueue.remove(task.getId());
+    executingTaskQueue.remove(task.getSysId());
     if (task.getStatus() != TaskStatus.SUCCESS) {
       executableTaskQueue.resume(task);
-      return null;
+      return;
     }
-    if (task.getNextId() != null) {
-      TaskInfo nextTask = executableTaskQueue.getById(task.getNextId());
-      executingTaskQueue.add(nextTask);
-      executableTaskQueue.remove(nextTask.getId());
-      return nextTask;
+    TaskConf nextTaskConf = cronTaskQueue.getNextToTriggerTask(task.getJobId(), task.getTaskName());
+    if (nextTaskConf != null) {
+      TriggeredTaskInfo nextTask = generateTriggerTask(nextTaskConf, task.getJobId(), task.getWorkerGroup(), false);
+      executableTaskQueue.add(nextTask);
     }
-    return null;
   }
 
-  public synchronized boolean addNextTaskToExecutableQueue(TaskInfo task) {
-    return executableTaskQueue.add(task);
-  }
-
-  public synchronized boolean triggerTask(String taskId) {
-    if (cronTaskQueue.containTask(taskId)) {
-      TaskConf taskConf = cronTaskQueue.getTask(taskId);
-      TaskInfo task = new TaskInfo(taskConf);
-      task.setManualTrigger(true);
-      return executableTaskQueue.add(task);
-    }
-    return false;
-  }
-
-  public synchronized boolean triggerTaskGroup(String taskGroupId) {
-    if (cronTaskQueue.containTaskGroup(taskGroupId)) {
-      List<TaskConf> taskConfs = cronTaskQueue.getTasks(taskGroupId);
-      for (TaskConf taskConf : taskConfs) {
-        TaskInfo task = new TaskInfo(taskConf);
-        task.setManualTrigger(true);
-        executableTaskQueue.add(task);
+  public synchronized boolean manualTriggerJob(JobConf manualTriggerJobConf) {
+    String jobId = manualTriggerJobConf.getJobId();
+    if (cronTaskQueue.containJob(jobId)) {
+      JobConf jobConf = manualTriggerJobConf;
+      if (jobConf == null || jobConf.getTasks() == null || jobConf.getTasks().isEmpty()) {
+        jobConf = cronTaskQueue.getJob(jobId);
       }
+      if (jobConf == null || jobConf.getTasks() == null || jobConf.getTasks().isEmpty()) {
+        logger.error("Cannot trigger job {} with no task to execute", jobId);
+        return false;
+      }
+      TaskConf taskConf = jobConf.getTasks().get(0);
+      TriggeredTaskInfo task = generateTriggerTask(taskConf, jobId, jobConf.getWorkerGroup(), true);
+      executableTaskQueue.add(task);
       return true;
     }
     return false;
-  }
-
-  public boolean addCronTask(TaskConf task) {
-    return cronTaskQueue.add(task);
-  }
-
-  public boolean addTaskGroup(TaskGroup taskGroup) {
-    List<TaskConf> tasks = generateTaskFromTaskGroup(taskGroup);
-    return cronTaskQueue.addBatch(tasks);
-  }
-
-  public boolean updateCronTask(TaskConf taskConf) {
-    return cronTaskQueue.update(taskConf);
-  }
-
-  private List<TaskConf> generateTaskFromTaskGroup(TaskGroup taskGroup) {
-    List<TaskConf> taskConfs = taskGroup.getTasks();
-    for (int i = 0; i < taskConfs.size(); ++i) {
-      TaskConf task = taskConfs.get(i);
-      task.setCronExpression(taskGroup.getCronExpression());
-      task.setWorkerGroup(taskGroup.getWorkerGroup());
-      task.setTaskGroup(taskGroup.getTaskGroupId());
-      if (i < taskConfs.size() - 1) {
-        task.setNextTaskId(taskConfs.get(i + 1).getTaskId());
-      }
-    }
-    return taskConfs;
-  }
-
-  public boolean updateTaskGroup(TaskGroup taskGroup) {
-    List<TaskConf> tasks = generateTaskFromTaskGroup(taskGroup);
-    return cronTaskQueue.updateBatch(tasks);
-  }
-
-  public boolean removeCronTask(String taskId) {
-    return cronTaskQueue.remove(taskId);
-  }
-
-  public boolean removeTaskGroup(String taskGroupId) {
-    List<String> taskIds = cronTaskQueue.getTaskId(taskGroupId);
-    return cronTaskQueue.removeBatch(taskIds);
-  }
-
-  public CronTaskQueue cronTaskQueue() {
-    return cronTaskQueue;
-  }
-
-  public ExecutableTaskQueue executableTaskQueue() {
-    return executableTaskQueue;
   }
 
   public ExecutingTaskQueue executingTaskQueue() {
@@ -207,22 +132,23 @@ public class TaskQueueContext {
     return conf;
   }
 
-  public Set<String> getWorkerGroups() {
-    return workerGroupQueue.getAll();
+  private TriggeredTaskInfo generateTriggerTask(TaskConf taskConf, String jobId, String workerGroup, boolean manualTrigger) {
+    TriggeredTaskInfo task = new TriggeredTaskInfo(jobId, workerGroup, taskConf.getTaskId(),
+      taskConf.getTaskName(), taskConf.getParams(), IdUtil.getUniqId(), manualTrigger);
+    return task;
   }
 
   class CronTaskGenerator implements Runnable {
 
     @Override public void run() {
-      List<TaskConf> validTaskConfs = cronTaskQueue.getAllValid();
-      for (TaskConf taskConf : validTaskConfs) {
-        Date nextTriggerTime = CronExpressionUtil.getNextTriggerTime(taskConf.getCronExpression());
-        Date maxTime = DateUtils.addMinutes(new Date(), conf.getInt("dts.task.trigger.interval", 10));
-        if (nextTriggerTime.before(maxTime)) {
-          taskConf.setTriggerTime(nextTriggerTime);
-          TaskInfo task = new TaskInfo(taskConf);
-          executableTaskQueue.add(task);
-        }
+      long now = System.currentTimeMillis();
+      List<JobConf> jobConfs = cronTaskQueue.getNextTriggerJobs(now + TASK_TRIGGER_INTERVAL_MS);
+      for (JobConf jobConf : jobConfs) {
+        TaskConf taskConf = jobConf.getTasks().get(0);
+        TriggeredTaskInfo task = generateTriggerTask(taskConf, jobConf.getJobId(),
+          jobConf.getWorkerGroup(), false);
+        executableTaskQueue.add(task);
+        cronTaskQueue.triggeredJob(jobConf);
       }
     }
   }

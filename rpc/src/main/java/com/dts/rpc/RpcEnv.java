@@ -1,5 +1,6 @@
 package com.dts.rpc;
 
+import com.dts.rpc.netty.NettyRpcEnvFactory;
 import com.dts.rpc.netty.RpcRequestMessage;
 import com.dts.rpc.network.client.TransportClient;
 
@@ -12,37 +13,42 @@ import java.util.concurrent.ThreadPoolExecutor;
 /**
  * @author zhangxin
  */
-public interface RpcEnv {
+public abstract class RpcEnv {
 
-  void startServer(int port);
+  public static RpcEnv create(String name, String host, int port, DTSConf conf, boolean clientMode) {
+    RpcEnvConfig rpcEnvConfig = new RpcEnvConfig(conf, name, host, port, clientMode);
+    return new NettyRpcEnvFactory().create(rpcEnvConfig);
+  }
 
-  DTSConf conf();
+  public abstract void startServer(int port);
 
-  RpcAddress address();
+  public abstract DTSConf conf();
 
-  ThreadPoolExecutor clientConnectionExecutor();
+  public abstract RpcAddress address();
 
-  TransportClient createClient(RpcAddress address) throws IOException;
+  public abstract ThreadPoolExecutor clientConnectionExecutor();
 
-  void removeOutbox(RpcAddress address);
+  public abstract TransportClient createClient(RpcAddress address) throws IOException;
 
-  RpcEndpointRef setupEndpoint(String name, RpcEndpoint endpoint);
+  public abstract void removeOutbox(RpcAddress address);
 
-  RpcEndpointRef setupEndpointRef(RpcAddress address, String endpointName);
+  public abstract RpcEndpointRef setupEndpoint(String name, RpcEndpoint endpoint);
 
-  ByteBuffer serialize(Object content) throws Exception;
+  public abstract RpcEndpointRef setupEndpointRef(RpcAddress address, String endpointName);
 
-  Object deserialize(TransportClient client, ByteBuffer bytes) throws Exception;
+  public abstract ByteBuffer serialize(Object content) throws Exception;
 
-  RpcEndpointRef endpointRef(RpcEndpoint endpoint);
+  public abstract Object deserialize(TransportClient client, ByteBuffer bytes) throws Exception;
 
-  void shutdown();
+  public abstract RpcEndpointRef endpointRef(RpcEndpoint endpoint);
 
-  void awaitTermination();
+  public abstract void shutdown();
 
-  void send(RpcRequestMessage message) throws Exception;
+  public abstract void awaitTermination();
 
-  <T> Future<T> ask(RpcRequestMessage message);
+  public abstract void send(RpcRequestMessage message) throws Exception;
 
-  void stop(RpcEndpointRef endpointRef);
+  public abstract <T> Future<T> ask(RpcRequestMessage message);
+
+  public abstract void stop(RpcEndpointRef endpointRef);
 }
