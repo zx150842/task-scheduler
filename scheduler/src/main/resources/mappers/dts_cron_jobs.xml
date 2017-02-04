@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.dts.scheduler.queue.mysql.impl.CronJobDao">
+    <resultMap id="baseMap" type="com.dts.scheduler.queue.mysql.impl.CronJob">
+        <result column="job_id" property="jobId"/>
+        <result column="tasks" property="tasks"/>
+        <result column="cron_expression" property="cronExpression"/>
+        <result column="worker_group" property="workerGroup"/>
+        <result column="status" property="status"/>
+        <result column="max_run_time_sec" property="maxRunTimeSec"/>
+        <result column="last_trigger_time" property="lastTriggerTime"/>
+    </resultMap>
+
+    <sql id="tableName">
+        dts_cron_jobs
+    </sql>
+
+    <sql id="columnAll">
+        job_id,
+        tasks,
+        cron_expression,
+        worker_group,
+        status,
+        max_run_time_sec,
+        last_trigger_time
+    </sql>
+
+    <insert id="add">
+      insert into <include refid="tableName"/>
+        (<include refid="columnAll"/>)
+        values (#{jobId}, #{tasks}, #{cronExpression}, #{workerGroup}, #{status}, #{maxRunTimeSec})
+    </insert>
+
+    <update id="update">
+        update <include refid="tableName"/>
+        set tasks = #{tasks}, cron_expression = #{cronExpression}, worker_group = #{workerGroup},
+        status = #{status}, max_run_time_sec = #{maxRunTimeSec}
+        where job_id = #{jobId}
+    </update>
+
+    <update id="delete">
+        update <include refid="tableName"/>
+        set status = 0
+        where job_id = #{jobId}
+    </update>
+
+    <select id="getAllValid" resultMap="baseMap">
+        select <include refid="columnAll"/>
+        from <include refid="tableName"/>
+        where status = 1
+    </select>
+
+    <update id="updateTriggerTime">
+        update <include refid="tableName"/>
+        set last_trigger_time = #{lastTriggerTime}
+        where job_id = #{jobId}
+    </update>
+</mapper>

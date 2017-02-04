@@ -35,6 +35,7 @@ public class TriggeredTaskInfo implements Serializable {
   // task被分配运行的线程名
   transient private String threadName;
 
+  transient private Timestamp triggerTime;
   transient private Timestamp executableTime;
   transient private Timestamp launchingTime;
   transient private Timestamp launchedTime;
@@ -117,6 +118,14 @@ public class TriggeredTaskInfo implements Serializable {
 
   public void setThreadName(String threadName) {
     this.threadName = threadName;
+  }
+
+  public Timestamp getTriggerTime() {
+    return triggerTime;
+  }
+
+  public void setTriggerTime(Timestamp triggerTime) {
+    this.triggerTime = triggerTime;
   }
 
   public Timestamp getExecutableTime() {

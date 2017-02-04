@@ -1,9 +1,10 @@
 package com.dts.core.util;
 
-import com.dts.rpc.DTSConf;
-import com.dts.rpc.exception.DTSException;
+import com.dts.core.DTSConf;
+import com.dts.core.exception.DTSException;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Properties;
 
 /**
@@ -15,7 +16,8 @@ public class DTSConfUtil {
     DTSConf conf = new DTSConf(true);
     Properties prop = new Properties();
     try {
-      prop.load(DTSConfUtil.class.getResourceAsStream(path));
+      InputStream in = DTSConfUtil.class.getClassLoader().getResourceAsStream(path);
+      prop.load(in);
       for (Object key : prop.keySet()) {
         conf.set((String)key, (String)prop.get(key));
       }

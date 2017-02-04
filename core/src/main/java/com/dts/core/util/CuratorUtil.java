@@ -1,6 +1,7 @@
 package com.dts.core.util;
 
-import com.dts.rpc.DTSConf;
+import com.dts.core.DTSConf;
+
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.ExponentialBackoffRetry;

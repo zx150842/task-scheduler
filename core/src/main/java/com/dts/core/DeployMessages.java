@@ -1,6 +1,6 @@
 package com.dts.core;
 
-import com.dts.rpc.RpcEndpointRef;
+import com.dts.core.rpc.RpcEndpointRef;
 
 import java.io.Serializable;
 

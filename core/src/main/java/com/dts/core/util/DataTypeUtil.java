@@ -6,7 +6,7 @@ package com.dts.core.util;
 public class DataTypeUtil {
 
   public static Object convertToPrimitiveType(String type, String value) {
-    Object convertValue = null;
+    Object convertValue;
     switch (type) {
       case "boolean":
       case "Boolean":

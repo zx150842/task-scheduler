@@ -1,3 +1,2 @@
 rootProject.name = 'task-scheduler'
-include "rpc", "core", "executor", "admin"
-
+include "scheduler", "core", "executor", "admin"

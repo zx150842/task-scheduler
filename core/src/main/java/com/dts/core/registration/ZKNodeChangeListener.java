@@ -8,5 +8,7 @@ import java.util.Map;
  */
 public interface ZKNodeChangeListener {
 
-  void onChange(String workerGroup, List<RpcRegisterMessage> messages);
+  void onChange(String serviceName, List<RpcRegisterMessage> messages);
+
+  List<String> getListeningServiceNames();
 }

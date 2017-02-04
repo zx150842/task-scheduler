@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.dts.scheduler.queue.mysql.impl.FinishedTaskDao">
+    <resultMap id="baseMap" type="com.dts.core.TriggeredTaskInfo">
+        <result column="job_id" property="jobId"/>
+        <result column="task_id" property="taskId"/>
+        <result column="task_name" property="taskName"/>
+        <result column="worker_group" property="workerGroup"/>
+        <result column="sys_id" property="sysId"/>
+        <result column="params" property="params"/>
+        <result column="manual_trigger" property="manualTrigger"/>
+        <result column="worker_id" property="workerId"/>
+        <result column="executable_time" property="executableTime"/>
+        <result column="launching_time" property="launchingTime"/>
+        <result column="launched_time" property="launchedTime"/>
+        <result column="executing_time" property="executingTime"/>
+        <result column="finish_time" property="finishTime"/>
+    </resultMap>
+
+    <sql id="tableName">
+        dts_finish_tasks
+    </sql>
+
+    <sql id="columnAll">
+        job_id,
+        task_id,
+        task_name,
+        worker_group,
+        sys_id,
+        params,
+        manual_trigger,
+        worker_id,
+        executable_time,
+        launching_time,
+        launched_time,
+        executing_time,
+        finish_time
+    </sql>
+
+    <insert id="add">
+      insert into <include refid="tableName"/>
+        (<include refid="columnAll"/>)
+        values
+        (#{jobId}, #{taskId}, #{taskName}, #{workerGroup}, #{sysId}, #{params},
+        #{manualTrigger}, #{workerId}, #{executableTime}, #{launchingTime},
+        #{launchedTime}, #{executingTime}, now())
+    </insert>
+</mapper>

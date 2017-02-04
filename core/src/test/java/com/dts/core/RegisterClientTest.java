@@ -1,12 +1,12 @@
 package com.dts.core;
 
+import com.google.common.collect.Lists;
+
 import com.dts.core.registration.RegisterClient;
+import com.dts.core.registration.RegisterServiceName;
 import com.dts.core.registration.RpcRegisterMessage;
 import com.dts.core.registration.WorkerNodeDetail;
 import com.dts.core.registration.ZKNodeChangeListener;
-import com.dts.core.util.CuratorUtil;
-import com.dts.rpc.DTSConf;
-import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.test.TestingServer;
 import org.apache.curator.x.discovery.ServiceInstance;
 import org.junit.Test;
@@ -31,9 +31,15 @@ public class RegisterClientTest {
             System.out.println("cache: " + message.address.hostPort);
           }
         }
+
+        @Override
+        public List<String> getListeningServiceNames() {
+          return Lists.newArrayList(RegisterServiceName.WORKER);
+        }
       });
+      registerClient.start();
       ServiceInstance<WorkerNodeDetail> instance1 =
-        ServiceInstance.<WorkerNodeDetail>builder().name("service1").port(12346).address("127.0.0.1").build();
+        ServiceInstance.<WorkerNodeDetail>builder().name(RegisterServiceName.WORKER).port(12346).address("127.0.0.1").build();
       ServiceInstance<WorkerNodeDetail> instance2 =
         ServiceInstance.<WorkerNodeDetail>builder().name("service1").port(12346).address("127.0.0.1").build();
       ServiceInstance<WorkerNodeDetail> instance3 =

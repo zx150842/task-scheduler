@@ -1,8 +1,8 @@
 package com.dts.core.registration;
 
 import com.dts.core.util.CuratorUtil;
-import com.dts.rpc.DTSConf;
-import com.dts.rpc.exception.DTSException;
+import com.dts.core.DTSConf;
+import com.dts.core.exception.DTSException;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -23,18 +23,28 @@ public class RegisterClient {
   private ServiceDiscovery<WorkerNodeDetail> serviceDiscovery;
   private ZKNodeChangeListener listener;
   private Map<String, ServiceCache<WorkerNodeDetail>> serviceCaches = Maps.newHashMap();
-  private Object serviceCahceLock = new Object();
+  private Object serviceCacheLock = new Object();
 
   public RegisterClient(DTSConf conf, ZKNodeChangeListener listener) {
-    try {
-      CuratorFramework zk = CuratorUtil.newClient(conf);
-      String basePath = conf.get("dts.zookeeper.dir", "/dts") + "/register";
-      JsonInstanceSerializer<WorkerNodeDetail> serializer = new JsonInstanceSerializer<>(WorkerNodeDetail.class);
-      serviceDiscovery =
-        ServiceDiscoveryBuilder.builder(WorkerNodeDetail.class).client(zk).basePath(basePath).serializer(serializer).build();
-      this.listener = listener;
+    CuratorFramework zk = CuratorUtil.newClient(conf);
+    String basePath = conf.get("dts.zookeeper.dir", "/dts") + "/register";
+    JsonInstanceSerializer<WorkerNodeDetail> serializer = new JsonInstanceSerializer<>(WorkerNodeDetail.class);
+    serviceDiscovery =
+      ServiceDiscoveryBuilder.builder(WorkerNodeDetail.class).client(zk).basePath(basePath).serializer(serializer).build();
+    this.listener = listener;
 
+    List<String> listeningServiceNames = listener.getListeningServiceNames();
+    for (String serviceName : listeningServiceNames) {
+      registerServiceCache(serviceName);
+    }
+  }
+
+  public void start() {
+    try {
       serviceDiscovery.start();
+      for (String serviceName : serviceCaches.keySet()) {
+        serviceCaches.get(serviceName).start();
+      }
     } catch (Exception e) {
       throw new DTSException(e);
     }
@@ -42,10 +52,6 @@ public class RegisterClient {
 
   public void registerService(ServiceInstance<WorkerNodeDetail> serviceInstance) {
     try {
-      String serviceName = serviceInstance.getName();
-      if (!serviceCaches.containsKey(serviceName)) {
-        registerServiceCache(serviceName);
-      }
       serviceDiscovery.registerService(serviceInstance);
     } catch (Exception e) {
       throw new DTSException(e);
@@ -88,7 +94,7 @@ public class RegisterClient {
   public void close() {
     try {
       serviceDiscovery.close();
-      synchronized (serviceCahceLock) {
+      synchronized (serviceCacheLock) {
         for (String serviceName : serviceCaches.keySet()) {
           serviceCaches.get(serviceName).close();
         }
@@ -98,20 +104,22 @@ public class RegisterClient {
     }
   }
 
-  private void registerServiceCache(String serviceName) throws Exception {
-    synchronized (serviceCahceLock) {
+  private void registerServiceCache(String serviceName) {
+    synchronized (serviceCacheLock) {
       if (!serviceCaches.containsKey(serviceName)) {
         ServiceCache serviceCache = serviceDiscovery.serviceCacheBuilder().name(serviceName).build();
         serviceCache.addListener(new ServiceCacheListener() {
-          @Override public void cacheChanged() {
+          @Override
+          public void cacheChanged() {
             listener.onChange(serviceName, getByServiceName(serviceName));
           }
-          @Override public void stateChanged(CuratorFramework client, ConnectionState newState) {
+
+          @Override
+          public void stateChanged(CuratorFramework client, ConnectionState newState) {
             listener.onChange(serviceName, getByServiceName(serviceName));
           }
         });
         serviceCaches.put(serviceName, serviceCache);
-        serviceCache.start();
       }
     }
   }

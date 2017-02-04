@@ -1,6 +1,6 @@
 package com.dts.core.registration;
 
-import com.dts.rpc.RpcAddress;
+import com.dts.core.rpc.RpcAddress;
 import org.apache.curator.x.discovery.ServiceInstance;
 
 /**
