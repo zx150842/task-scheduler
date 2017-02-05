@@ -56,7 +56,7 @@ public class DTSConf implements Cloneable {
   }
 
   public TransportConf getTransportConf(String module) {
-    DTSConf conf = this.clone();
+    final DTSConf conf = this.clone();
     return new TransportConf(module, new ConfigProvider() {
       @Override public String get(String name) {
         return conf.get(name);
