@@ -21,7 +21,7 @@ import java.util.concurrent.Future;
  * @author zhangxin
  */
 public class NettyRpcEndpointRef extends RpcEndpointRef implements Serializable {
-  private final Logger logger = LoggerFactory.getLogger(NettyRpcEndpointRef.class);
+  private static final long serialVersionUID = 635668839367443818L;
 
   private RpcEndpointAddress endpointAddress;
   transient private NettyRpcEnv nettyRpcEnv;
@@ -60,7 +60,7 @@ public class NettyRpcEndpointRef extends RpcEndpointRef implements Serializable 
 
   @Override
   protected Logger logger() {
-    return logger;
+    return LoggerFactory.getLogger(NettyRpcEndpointRef.class);
   }
 
   public TransportClient client() {

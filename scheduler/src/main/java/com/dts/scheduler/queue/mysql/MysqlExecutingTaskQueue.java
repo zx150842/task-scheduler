@@ -47,4 +47,21 @@ public class MysqlExecutingTaskQueue extends AbstractSqlQueue implements Executi
       MybatisUtil.closeSqlSession(sqlSession);
     }
   }
+
+  @Override
+  public TriggeredTaskInfo getBySysId(String sysId) {
+    SqlSession sqlSession = null;
+    try {
+      sqlSession = MybatisUtil.getSqlSession();
+      List<TriggeredTaskInfo> tasks = sqlSession.selectList(PREFIX + ".getBySysId", sysId);
+      if (tasks != null && !tasks.isEmpty()) {
+        return tasks.get(0);
+      }
+      return null;
+    } catch (Exception e) {
+      throw e;
+    } finally {
+      MybatisUtil.closeSqlSession(sqlSession);
+    }
+  }
 }

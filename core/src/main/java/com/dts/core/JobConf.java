@@ -10,6 +10,7 @@ import java.util.List;
  * @author zhangxin
  */
 public class JobConf implements Serializable {
+  private static final long serialVersionUID = 3447930585620282460L;
   private String jobId;
   // 一个job中所有的task
   private List<TaskConf> tasks;

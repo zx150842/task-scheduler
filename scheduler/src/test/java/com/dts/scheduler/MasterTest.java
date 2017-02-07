@@ -50,7 +50,8 @@ public class MasterTest {
 
   @Test
   public void testSendTask() {
-
+    String workerGroup = "executor-example";
+    _master.schedule(workerGroup);
   }
 
 }

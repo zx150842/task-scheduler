@@ -5,6 +5,8 @@ import com.dts.core.rpc.RpcEndpointRef;
 import java.io.Serializable;
 
 /**
+ * worker节点信息
+ *
  * @author zhangxin
  */
 public class WorkerInfo implements Serializable {

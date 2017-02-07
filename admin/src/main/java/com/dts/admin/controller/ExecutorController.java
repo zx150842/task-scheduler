@@ -24,8 +24,8 @@ public class ExecutorController {
   @RequestMapping("/executor")
   public String index(ModelMap model) {
     List<WorkerNodeDto> list = executorService.getAll();
-    list = Lists.newArrayList(new WorkerNodeDto("127.0.0.1", 1000, "testWorkerId1",
-        "engine", 10, null));
+//    list = Lists.newArrayList(new WorkerNodeDto("127.0.0.1", 1000, "testWorkerId1",
+//        "engine", 10, null));
     model.put(Constant.LIST, list);
     return "/executor";
   }

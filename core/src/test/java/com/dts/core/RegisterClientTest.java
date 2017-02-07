@@ -1,12 +1,8 @@
 package com.dts.core;
 
+import com.dts.core.registration.*;
 import com.google.common.collect.Lists;
 
-import com.dts.core.registration.RegisterClient;
-import com.dts.core.registration.RegisterServiceName;
-import com.dts.core.registration.RpcRegisterMessage;
-import com.dts.core.registration.WorkerNodeDetail;
-import com.dts.core.registration.ZKNodeChangeListener;
 import org.apache.curator.test.TestingServer;
 import org.apache.curator.x.discovery.ServiceInstance;
 import org.junit.Test;

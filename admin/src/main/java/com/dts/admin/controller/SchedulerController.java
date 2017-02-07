@@ -29,7 +29,7 @@ public class SchedulerController {
   @RequestMapping("")
   public String index(ModelMap model) {
     List<MasterNodeDto> list = schedulerService.getAll();
-    list = Lists.newArrayList(new MasterNodeDto("127.0.0.1", 1001));
+//    list = Lists.newArrayList(new MasterNodeDto("127.0.0.1", 1001));
     model.put(Constant.LIST, list);
     return "scheduler";
   }

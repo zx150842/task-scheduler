@@ -11,7 +11,7 @@ import java.io.Serializable;
  * @author zhangxin
  */
 public class RpcAddress implements Serializable {
-
+  private static final long serialVersionUID = -109058378161107203L;
   public final String host;
   public final int port;
   public final String hostPort;

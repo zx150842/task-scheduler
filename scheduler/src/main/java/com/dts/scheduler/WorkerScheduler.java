@@ -9,6 +9,9 @@ import java.util.List;
 import java.util.Random;
 
 /**
+ * worker调度器，根据调度策略选择一台worker来执行任务
+ * <p>当前只实现了随机选择策略</p>
+ *
  * @author zhangxin
  */
 public class WorkerScheduler {

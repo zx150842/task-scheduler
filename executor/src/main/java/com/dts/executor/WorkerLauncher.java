@@ -11,6 +11,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
+ * 执行器的启动入口。这里执行器应用的项目需要为spring项目，在执行器所属项目启动时，
+ * 启动器会被调用，进行初始化工作并在当前节点启动执行器
+ *
  * @author zhangxin
  */
 @Component

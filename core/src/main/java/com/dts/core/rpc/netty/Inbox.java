@@ -1,5 +1,6 @@
 package com.dts.core.rpc.netty;
 
+import com.dts.core.rpc.RpcAddress;
 import com.google.common.collect.Lists;
 
 import com.dts.core.rpc.RpcEndpoint;
@@ -57,7 +58,7 @@ public class Inbox {
           }
         } else if (message instanceof OneWayInboxMessage) {
           OneWayInboxMessage msg = (OneWayInboxMessage)message;
-          endpoint.receive(msg.content);
+          endpoint.receive(msg.content, msg.senderAddress);
         } else if (message instanceof OnStart) {
           endpoint.onStart();
           synchronized (this) {

@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
+ * 任务扫描器，用来扫描应用程序中所有包含{@link Task}注解的方法
+ *
  * @author zhangxin
  */
 @Component

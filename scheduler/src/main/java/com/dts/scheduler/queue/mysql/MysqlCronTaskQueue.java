@@ -64,7 +64,6 @@ public class MysqlCronTaskQueue extends AbstractSqlQueue implements CronTaskQueu
     List<JobConf> toTriggerJobs = Lists.newArrayList();
     try {
       lock.lock();
-      // TODO add min job
       Date now = new Date();
       for (JobConf jobConf : triggerJobs) {
         if (jobConf.getNextTriggerTime().getTime() > noLaterThan) {

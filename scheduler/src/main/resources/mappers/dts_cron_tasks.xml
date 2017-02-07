@@ -32,7 +32,8 @@
         worker_id,
         executable_time,
         status,
-        trigger_time
+        trigger_time,
+        ctime
     </sql>
 
     <!--
@@ -47,7 +48,7 @@
       insert into <include refid="tableName"/>
         (<include refid="columnAll"/>)
         values (#{jobId}, #{taskId}, #{taskName}, #{workerGroup}, #{sysId}, #{params},
-        #{manualTrigger}, #{workerId}, now(), 1, #{triggerTime})
+        #{manualTrigger}, #{workerId}, now(), 1, #{triggerTime}, now())
     </insert>
 
     <update id="delete">
@@ -92,4 +93,17 @@
         from <include refid="tableName"/>
         where status = 4 and task_id = #{taskId}
     </select>
+
+    <select id="getBySysId" resultMap="baseMap">
+        select <include refid="columnAll"/>,
+        launched_time, launching_time, executing_time
+        from <include refid="tableName"/>
+        where sys_id = #{sysId}
+    </select>
+
+    <update id="updateWorkerId">
+        update <include refid="tableName"/>
+        set worker_id = #{workerId}
+        where sys_id = #{sysId}
+    </update>
 </mapper>

@@ -1,6 +1,5 @@
 package com.dts.scheduler;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
@@ -14,7 +13,6 @@ import com.dts.core.registration.ZKNodeChangeListener;
 import com.dts.core.util.AddressUtil;
 import com.dts.core.util.DTSConfUtil;
 import com.dts.core.util.ThreadUtil;
-import com.dts.core.util.Tuple2;
 import com.dts.core.rpc.RpcAddress;
 import com.dts.core.rpc.RpcCallContext;
 import com.dts.core.rpc.RpcEndpoint;
@@ -24,7 +22,6 @@ import com.dts.core.rpc.RpcEnv;
 import com.dts.core.exception.DTSException;
 import com.dts.core.rpc.netty.NettyRpcEndpointRef;
 import com.dts.core.rpc.netty.NettyRpcEnv;
-import com.dts.core.rpc.util.SerializerInstance;
 import com.dts.scheduler.queue.TaskQueueContext;
 
 import org.apache.curator.x.discovery.ServiceInstance;
@@ -44,6 +41,9 @@ import java.util.concurrent.locks.ReentrantLock;
 import static com.dts.core.DeployMessages.*;
 
 /**
+ * 调度器实现类，主要实现注册调度器，被选为leader节点的调度器下发任务到worker执行，
+ * 并将执行结果保存
+ *
  * @author zhangxin
  */
 public class Master extends RpcEndpoint {
@@ -74,6 +74,7 @@ public class Master extends RpcEndpoint {
   private ScheduledFuture syncWorkerTask;
   private ScheduledFuture sendTaskToWorkTask;
   private RegisterClient registerClient;
+  private ServiceInstance instance;
 
   public Master(RpcEnv rpcEnv, RpcAddress address, DTSConf conf, TaskQueueContext taskQueueContext) {
     super(rpcEnv);
@@ -96,7 +97,7 @@ public class Master extends RpcEndpoint {
     registerClient = new RegisterClient(conf, new WorkerNodeChangeListener());
     registerClient.start();
     try {
-      ServiceInstance instance = ServiceInstance.builder()
+      instance = ServiceInstance.builder()
           .address(address.host)
           .port(address.port)
           .name(RegisterServiceName.MASTER)
@@ -146,6 +147,9 @@ public class Master extends RpcEndpoint {
       sendTaskToWorkTask.cancel(true);
     }
     if (registerClient != null) {
+      if (instance != null) {
+        registerClient.unregisterService(instance);
+      }
       registerClient.close();
     }
     syncZKWorkerThread.shutdownNow();
@@ -162,7 +166,7 @@ public class Master extends RpcEndpoint {
   }
 
   @Override
-  public void receive(Object o) {
+  public void receive(Object o, RpcAddress senderAddress) {
     if (o instanceof ElectedLeader) {
       start();
     }
@@ -190,7 +194,7 @@ public class Master extends RpcEndpoint {
 
     else if (o instanceof FinishTask) {
       FinishTask msg = (FinishTask)o;
-      taskQueueContext.completeTask(msg.task);
+      taskQueueContext.completeTask(msg.task.getSysId());
     }
 
     else if (o instanceof ManualTriggerJob) {
@@ -201,7 +205,15 @@ public class Master extends RpcEndpoint {
 
   @Override
   public void receiveAndReply(Object content, RpcCallContext context) {
-    if (content instanceof KillRunningTask) {
+    if (content instanceof AskMaster) {
+      if (state == RecoveryState.ALIVE) {
+        context.reply(true);
+      } else {
+        context.reply(false);
+      }
+    }
+
+    else if (content instanceof KillRunningTask) {
       KillRunningTask msg = (KillRunningTask)content;
       WorkerInfo worker = workerScheduler.getLaunchTaskWorker(msg.task.getWorkerGroup());
       if (worker != null) {
@@ -234,7 +246,7 @@ public class Master extends RpcEndpoint {
     return _workerGroups;
   }
 
-  private void schedule(String workerGroup) {
+  void schedule(String workerGroup) {
     if (state != RecoveryState.ALIVE) {
       return;
     }
@@ -242,6 +254,8 @@ public class Master extends RpcEndpoint {
     if (task != null) {
       WorkerInfo worker = workerScheduler.getLaunchTaskWorker(workerGroup);
       if (worker != null) {
+        task.setWorkerId(worker.id);
+        taskQueueContext.updateTaskWorkerId(task.getSysId(), worker.id);
         worker.endpoint.send(new LaunchTask(task));
       }
     }
@@ -249,15 +263,18 @@ public class Master extends RpcEndpoint {
 
   private boolean reregisterWorkers() {
     List<RpcRegisterMessage> messages = registerClient.getByServiceName(RegisterServiceName.WORKER);
-    if (messages == null || messages.isEmpty()) {
-      logger.warn("Service name {} has no valid node", RegisterServiceName.WORKER);
-      return false;
-    }
     try {
       if (workerLock.tryLock()) {
         Map<String, List<WorkerInfo>> workerGroups = Maps.newHashMap();
         Map<String, WorkerInfo> idToWorker = Maps.newHashMap();
         Map<RpcAddress, WorkerInfo> addressToWorker = Maps.newHashMap();
+        if (messages == null || messages.isEmpty()) {
+          logger.warn("Service name {} has no valid node", RegisterServiceName.WORKER);
+          _workerGroups = workerGroups;
+          _idToWorker = idToWorker;
+          _addressToWorker = addressToWorker;
+          return false;
+        }
         for (RpcRegisterMessage message : messages) {
           String workerId = message.detail.getWorkerId();
           RpcEndpointRef workerRef = new NettyRpcEndpointRef(conf, new RpcEndpointAddress(message.address, EndpointNames.WORKER_ENDPOINT),
@@ -290,6 +307,9 @@ public class Master extends RpcEndpoint {
   }
 
   private void removeWorker(WorkerInfo worker) {
+    if (worker == null) {
+      return;
+    }
     logger.info("Removing worker {} on {}:{}", worker.id, worker.host, worker.port);
     worker.setState(WorkerState.DEAD);
     try {
@@ -331,15 +351,6 @@ public class Master extends RpcEndpoint {
     public List<String> getListeningServiceNames() {
       return Lists.newArrayList(RegisterServiceName.WORKER);
     }
-  }
-
-  public static void main(String[] args) {
-    Preconditions.checkArgument(args == null || args.length != 1,
-      "Master must start with property file path param.");
-    String propertyFilePath = args[0];
-    DTSConf conf = DTSConfUtil.readFile(propertyFilePath);
-    Master master = launchMaster(conf);
-    master.rpcEnv.awaitTermination();
   }
 
   public static Master launchMaster(DTSConf conf) {

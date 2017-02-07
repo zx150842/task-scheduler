@@ -14,4 +14,6 @@ public interface ExecutingTaskQueue {
   boolean remove(String id);
 
   List<TriggeredTaskInfo> getByTaskId(String taskId);
+
+  TriggeredTaskInfo getBySysId(String sysId);
 }

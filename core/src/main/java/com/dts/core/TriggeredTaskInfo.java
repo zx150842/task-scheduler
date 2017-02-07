@@ -12,6 +12,7 @@ import java.util.List;
  * @author zhangxin
  */
 public class TriggeredTaskInfo implements Serializable {
+  private static final long serialVersionUID = 3918545175313075373L;
   // task所属的jobId
   private String jobId;
   // 运行task的worker组

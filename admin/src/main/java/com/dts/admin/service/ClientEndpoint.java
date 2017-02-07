@@ -1,5 +1,6 @@
 package com.dts.admin.service;
 
+import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -27,15 +28,20 @@ import com.dts.core.util.DTSConfUtil;
 import com.dts.core.util.Tuple2;
 
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author zhangxin
  */
 public class ClientEndpoint extends RpcEndpoint {
+  private final Logger logger = LoggerFactory.getLogger(ClientEndpoint.class);
 
   private static final String SYSTEM_NAME = "dtsClient";
   private static ClientEndpoint clientEndpoint;
@@ -50,12 +56,16 @@ public class ClientEndpoint extends RpcEndpoint {
   // workerGroup -> <taskName, param describe>
   private Map<String, Set<Tuple2<String, String>>> _workerGroupToTasks = Maps.newHashMap();
 
+  private final int MASTER_TIMEOUT_MS;
+
   private ClientEndpoint(RpcEnv rpcEnv, DTSConf conf) {
     super(rpcEnv);
     this.rpcEnv = rpcEnv;
     this.conf = conf;
+    this.MASTER_TIMEOUT_MS = conf.getInt("dts.master.timeoutMs", 500);
     registerClient = new RegisterClient(conf, new MasterNodeChangeListener());
     registerClient.start();
+    refresh();
   }
 
   public static ClientEndpoint endpoint() {
@@ -97,44 +107,69 @@ public class ClientEndpoint extends RpcEndpoint {
     return _masters;
   }
 
+  public void refresh() {
+    List<RpcRegisterMessage> masterMsgs = registerClient.getByServiceName(RegisterServiceName.MASTER);
+    refreshMasters(masterMsgs);
+    List<RpcRegisterMessage> workerMsgs = registerClient.getByServiceName(RegisterServiceName.WORKER);
+    refreshWorkers(workerMsgs);
+  }
+
+  void refreshMasters(List<RpcRegisterMessage> messages) {
+    Set<RpcEndpointRef> masterRefs = Sets.newLinkedHashSet();
+    List<MasterNodeDto> masters = Lists.newArrayList();
+    for (RpcRegisterMessage message : messages) {
+      try {
+        RpcEndpointAddress address = new RpcEndpointAddress(message.address, EndpointNames.MASTER_ENDPOINT);
+        RpcEndpointRef masterRef = new NettyRpcEndpointRef(conf, address, (NettyRpcEnv) rpcEnv);
+        Future<Boolean> future = masterRef.ask(new DeployMessages.AskMaster());
+        Boolean isLeader = future.get(MASTER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        if (isLeader == null) {
+          isLeader = false;
+        }
+        MasterNodeDto node = new MasterNodeDto(address.getRpcAddress().host, address.getRpcAddress().port, isLeader);
+        masters.add(node);
+        masterRefs.add(masterRef);
+      } catch (Exception e) {
+        logger.error(Throwables.getStackTraceAsString(e));
+        continue;
+      }
+    }
+    _masterRefs = masterRefs;
+    _masters = masters;
+  }
+
+  void refreshWorkers(List<RpcRegisterMessage> messages) {
+    List<WorkerNodeDto> workers = Lists.newArrayList();
+    List<String> workerGroups = Lists.newArrayList();
+    Map<String, Set<Tuple2<String, String>>> workerGroupToTasks = Maps.newHashMap();
+    for (RpcRegisterMessage message : messages) {
+      String workerGroup = message.detail.getWorkerGroup();
+      WorkerNodeDto node = new WorkerNodeDto(message.address.host,
+        message.address.port, message.detail.getWorkerId(), workerGroup,
+        message.detail.getThreadNum(), message.detail.getTaskMethods());
+      workers.add(node);
+      workerGroups.add(workerGroup);
+      if (!workerGroupToTasks.containsKey(workerGroup)) {
+        Set<Tuple2<String, String>> tasks = Sets.newHashSet();
+        for (String taskName : message.detail.getTaskMethods().keySet()) {
+          tasks.add(new Tuple2<>(taskName, message.detail.getTaskMethods().get(taskName)));
+        }
+        workerGroupToTasks.put(workerGroup, tasks);
+      }
+    }
+    _workers = workers;
+    _workerGroups = workerGroups;
+    _workerGroupToTasks = workerGroupToTasks;
+  }
+
   class MasterNodeChangeListener implements ZKNodeChangeListener {
 
     @Override
     public void onChange(String serviceName, List<RpcRegisterMessage> messages) {
       if (serviceName.equals(RegisterServiceName.MASTER)) {
-        Set<RpcEndpointRef> masterRefs = Sets.newLinkedHashSet();
-        List<MasterNodeDto> masters = Lists.newArrayList();
-        for (RpcRegisterMessage message : messages) {
-          RpcEndpointAddress address = new RpcEndpointAddress(message.address, EndpointNames.MASTER_ENDPOINT);
-          RpcEndpointRef masterRef = new NettyRpcEndpointRef(conf, address, (NettyRpcEnv) rpcEnv);
-          masterRefs.add(masterRef);
-          MasterNodeDto node = new MasterNodeDto(address.getRpcAddress().host, address.getRpcAddress().port);
-          masters.add(node);
-        }
-        _masterRefs = masterRefs;
-        _masters = masters;
+        refreshMasters(messages);
       } else if (serviceName.equals(RegisterServiceName.WORKER)) {
-        List<WorkerNodeDto> workers = Lists.newArrayList();
-        List<String> workerGroups = Lists.newArrayList();
-        Map<String, Set<Tuple2<String, String>>> workerGroupToTasks = Maps.newHashMap();
-        for (RpcRegisterMessage message : messages) {
-          String workerGroup = message.detail.getWorkerGroup();
-          WorkerNodeDto node = new WorkerNodeDto(message.address.host,
-              message.address.port, message.detail.getWorkerId(), workerGroup,
-              message.detail.getThreadNum(), message.detail.getTaskMethods());
-          workers.add(node);
-          workerGroups.add(workerGroup);
-          if (!workerGroupToTasks.containsKey(workerGroup)) {
-            Set<Tuple2<String, String>> tasks = Sets.newHashSet();
-            for (String taskName : message.detail.getTaskMethods().keySet()) {
-              tasks.add(new Tuple2<>(taskName, message.detail.getTaskMethods().get(taskName)));
-            }
-            workerGroupToTasks.put(workerGroup, tasks);
-          }
-        }
-        _workers = workers;
-        _workerGroups = workerGroups;
-        _workerGroupToTasks = workerGroupToTasks;
+        refreshWorkers(messages);
       } else {
         throw new IllegalArgumentException("serviceName [" + StringUtils.trimToEmpty(serviceName)
             + "] must be either 'MASTER' or 'WORKER'");

@@ -8,9 +8,10 @@ public class MasterNodeDto {
   private int port;
   private boolean isLeader;
 
-  public MasterNodeDto(String host, int port) {
+  public MasterNodeDto(String host, int port, boolean isLeader) {
     this.host = host;
     this.port = port;
+    this.isLeader = isLeader;
   }
 
   public String getHost() {

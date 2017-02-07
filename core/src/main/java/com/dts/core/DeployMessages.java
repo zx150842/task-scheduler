@@ -8,10 +8,12 @@ import java.io.Serializable;
  * @author zhangxin
  */
 public class DeployMessages implements Serializable {
+  private static final long serialVersionUID = 7950453821489411446L;
 
   // Worker to Master
 
   public static class RegisterWorker implements Serializable {
+    private static final long serialVersionUID = 5328508385791023709L;
     public final String workerId;
     public final int cores;
     public final long memory;
@@ -57,6 +59,7 @@ public class DeployMessages implements Serializable {
   public static class SendHeartbeat implements Serializable {}
 
   public static class LaunchedTask implements Serializable {
+    private static final long serialVersionUID = 7089091427436269671L;
     public final TriggeredTaskInfo task;
     public final String message;
 
@@ -67,6 +70,7 @@ public class DeployMessages implements Serializable {
   }
 
   public static class ExecutingTask implements Serializable {
+    private static final long serialVersionUID = -1327369516594181690L;
     public final TriggeredTaskInfo task;
     public final String executingThread;
 
@@ -77,6 +81,7 @@ public class DeployMessages implements Serializable {
   }
 
   public static class FinishTask implements Serializable {
+    private static final long serialVersionUID = -50490690996843513L;
     public final TriggeredTaskInfo task;
     public final String message;
 
@@ -87,6 +92,7 @@ public class DeployMessages implements Serializable {
   }
 
   public static class KilledTask implements Serializable {
+    private static final long serialVersionUID = 4829266027002849504L;
     public final TriggeredTaskInfo task;
     public final String message;
 
@@ -125,6 +131,7 @@ public class DeployMessages implements Serializable {
   public static class RequestWorkerState implements Serializable {}
 
   public static class LaunchTask implements Serializable {
+    private static final long serialVersionUID = -2465127500865016137L;
     public final TriggeredTaskInfo task;
 
     public LaunchTask(TriggeredTaskInfo task) {
@@ -133,6 +140,7 @@ public class DeployMessages implements Serializable {
   }
 
   public static class KillRunningTask implements Serializable {
+    private static final long serialVersionUID = 69888105641180689L;
     public final TriggeredTaskInfo task;
 
     public KillRunningTask(TriggeredTaskInfo task) {
@@ -142,22 +150,16 @@ public class DeployMessages implements Serializable {
 
   public interface RegisterResponse extends Serializable {}
 
-  // Master to Worker & Client
-
-  public static class MasterChanged implements Serializable {
-    public final RpcEndpointRef master;
-
-    public MasterChanged(RpcEndpointRef master) {
-      this.master = master;
-    }
-  }
-
   public static class MasterInStandby implements RegisterResponse {}
 
   // Worker internal
   public static class ReregisterWithMaster implements Serializable {}
 
   // Client to Master
+
+  public static class AskMaster implements Serializable {
+    private static final long serialVersionUID = 1459971664502308297L;
+  }
 
   public static class RegisterJob implements Serializable {
     public final JobConf jobConf;
@@ -182,6 +184,7 @@ public class DeployMessages implements Serializable {
   }
 
   public static class ManualTriggerJob implements Serializable {
+    private static final long serialVersionUID = 5274690913642148850L;
     public final JobConf jobConf;
 
     public ManualTriggerJob(JobConf jobConf) {

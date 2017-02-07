@@ -33,9 +33,11 @@
                             <span class="input-group-addon">任务名</span>
                             <select class="form-control" name="taskName" id="searchTaskSelector">
                                 <option value="0" <#if taskName ?? && taskName == "${searchTaskName!}">selected</#if>>全部</option>
-                            <#list tasks as task>
-                                <option value="${task._1}" <#if taskName ?? && taskName == "${searchTaskName!}">selected</#if>>${task._1}(${task._2})</option>
-                            </#list>
+                            <#if tasks ??>
+                                <#list tasks as task>
+                                    <option value="${task._1}" <#if taskName ?? && taskName == "${searchTaskName!}">selected</#if>>${task._1}(${task._2})</option>
+                                </#list>
+                            </#if>
                             </select>
                         </div>
                     </div>
@@ -134,9 +136,11 @@
                         <label for="firstname" class="col-sm-2 control-label">任务名<font color="red">*</font></label>
                         <div class="col-sm-4">
                             <select class="form-control" id="addTaskSelector">
-                                <#list tasks as task>
-                                    <option value="${task._1}">${task._1}(${task._2})</option>
-                                </#list>
+                                <#if firstGroupTasks ??>
+                                    <#list firstGroupTasks as task>
+                                        <option value="${task._1}">${task._1}(${task._2})</option>
+                                    </#list>
+                                </#if>
                             </select>
                         </div>
                     </div>
@@ -219,7 +223,7 @@
         $("#addWorkerGroupSelector").change(function(){
             var workerGroup = $("#addWorkerGroupSelector").val();
             $.ajax({
-                url:'/job/tasks',
+                url:'job/tasks',
                 type:'POST',
                 data:{"workerGroup":workerGroup},
                 dataType:'json',
@@ -236,7 +240,7 @@
         $("#searchWorkerGroupSelector").change(function(){
             var workerGroup = $("#searchWorkerGroupSelector").val();
             $.ajax({
-                url:'/job/tasks',
+                url:'job/tasks',
                 type:'POST',
                 data:{"workerGroup":workerGroup},
                 dataType:'json',
@@ -246,6 +250,8 @@
                         html += '<option value="'+data[i]._1+'">'+data[i]._1+'('+data[i]._2+')</option>'
                     }
                     $("#searchTaskSelector").html(html);
+                },error:function(data){
+                    alert(data)
                 }
             })
         })
@@ -258,7 +264,7 @@
         var desc = $("#addDesc").val();
         var cron = $("#addJobCron").val();
         $.ajax({
-            url:'/job/add',
+            url:'job/add',
             type:'POST',
             dataType:'json',
             data:{
@@ -299,7 +305,7 @@
         var workerGroup = $("#updateWorkerGroup").val();
         var taskName = $("#updateTaskName").val();
         $.ajax({
-            url:'/job/update',
+            url:'job/update',
             type:'POST',
             dataType:'json',
             data:{
@@ -325,7 +331,7 @@
 
     function pauseOrRunJob(jobId, status) {
         $.ajax({
-            url:'/job/pauseOrRun',
+            url:'job/pauseOrRun',
             type:'POST',
             dataType:'json',
             data:{"jobId":jobId, "status":status},
@@ -344,7 +350,7 @@
 
     function triggerJob(jobId) {
         $.ajax({
-            url:'/job/trigger',
+            url:'job/trigger',
             type:'POST',
             dataType:'json',
             data:{"jobId":jobId},
@@ -363,7 +369,7 @@
 
     function deleteJob(jobId) {
         $.ajax({
-            url:'/job/delete',
+            url:'job/delete',
             type:'POST',
             dataType:'json',
             data:{"jobId":jobId},

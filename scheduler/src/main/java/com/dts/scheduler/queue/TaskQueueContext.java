@@ -25,6 +25,8 @@ import com.dts.scheduler.queue.mysql.MysqlExecutableTaskQueue;
 import com.dts.scheduler.queue.mysql.MysqlExecutingTaskQueue;
 
 /**
+ * 任务队列上下文，master通过这个类与任务队列进行交互
+ *
  * @author zhangxin
  */
 public class TaskQueueContext {
@@ -74,6 +76,16 @@ public class TaskQueueContext {
     return task;
   }
 
+  public synchronized boolean updateTaskWorkerId(String sysId, String workerId) {
+    boolean success;
+    if (sysId != null && workerId != null) {
+      success = launchingTaskQueue.updateWorkerId(sysId, workerId);
+    } else {
+      success = false;
+    }
+    return success;
+  }
+
   public synchronized boolean launchedTask(TriggeredTaskInfo task) {
     boolean success;
     if (task != null) {
@@ -100,7 +112,12 @@ public class TaskQueueContext {
     return success;
   }
 
-  public synchronized void completeTask(TriggeredTaskInfo task) {
+  public synchronized void completeTask(String sysId) {
+    TriggeredTaskInfo task = executingTaskQueue.getBySysId(sysId);
+    if (task == null) {
+      logger.error("executing queue has no task, sysId: {}", sysId);
+      return;
+    }
     finishedTaskQueue.add(task);
     executingTaskQueue.remove(task.getSysId());
     if (task.getStatus() != TaskStatus.SUCCESS) {

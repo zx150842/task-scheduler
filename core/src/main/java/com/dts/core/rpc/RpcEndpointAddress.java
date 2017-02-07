@@ -6,7 +6,7 @@ import java.io.Serializable;
  * @author zhangxin
  */
 public class RpcEndpointAddress implements Serializable {
-
+  private static final long serialVersionUID = -2558029667220665904L;
   private final RpcAddress rpcAddress;
   private final String name;
 

@@ -16,6 +16,7 @@ import org.springframework.ui.ModelMap;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -43,12 +44,13 @@ public class JobController {
     }
     List<JobDto> jobs = cronJobService.getAll(workerGroup, taskName);
     List<String> workerGroups = cronJobService.getWorkerGroups();
-    workerGroups = Lists.newArrayList("engine", "statis");
-    if (workerGroups != null && !workerGroups.isEmpty()) {
+    if (workerGroup != null) {
       Set<Tuple2<String, String>> tasks = cronJobService.getTasks(workerGroup);
-      tasks = Sets.newHashSet(new Tuple2<String, String>("add","String t1,int t2"),
-          new Tuple2<String, String>("delete", "int t1"));
       model.put(Constant.TASKS, tasks);
+    }
+    if (workerGroups != null && !workerGroups.isEmpty()) {
+      Set<Tuple2<String, String>> firstGroupTasks = cronJobService.getTasks(workerGroups.get(0));
+      model.put(Constant.FIRST_GROUP_TASKS, firstGroupTasks);
     }
     model.put(Constant.LIST, jobs);
     model.put(Constant.WORKER_GROUPS, workerGroups);
@@ -59,11 +61,8 @@ public class JobController {
   @ResponseBody
   public Set<Tuple2<String, String>> tasks(String workerGroup) {
     Set<Tuple2<String, String>> tasks = cronJobService.getTasks(workerGroup);
-    if (workerGroup.equals("engine")) {
-      tasks = Sets.newHashSet(new Tuple2<String, String>("add", "String t1,int t2"),
-          new Tuple2<String, String>("delete", "int t1"));
-    } else if (workerGroup.equals("statis")) {
-      tasks = Sets.newHashSet(new Tuple2<String, String>("update", ""));
+    if (tasks == null || tasks.isEmpty()) {
+      return Collections.emptySet();
     }
     return tasks;
   }

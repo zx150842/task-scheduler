@@ -1,15 +1,11 @@
 package com.dts.executor;
 
+import com.dts.core.registration.*;
 import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Queues;
 
 import com.dts.core.EndpointNames;
-import com.dts.core.registration.RegisterClient;
-import com.dts.core.registration.RegisterServiceName;
-import com.dts.core.registration.RpcRegisterMessage;
-import com.dts.core.registration.WorkerNodeDetail;
-import com.dts.core.registration.ZKNodeChangeListener;
 import com.dts.core.rpc.RpcEndpointAddress;
 import com.dts.core.rpc.netty.NettyRpcEndpointRef;
 import com.dts.core.rpc.netty.NettyRpcEnv;
@@ -42,6 +38,9 @@ import static com.dts.core.DeployMessages.LaunchTask;
 import static com.dts.core.DeployMessages.LaunchedTask;
 
 /**
+ * 执行器实现类，主要实现向注册中心注册当前执行器，接收调度器下发的任务，
+ * 执行并向调度器上报执行结果
+ *
  * @author zhangxin
  */
 public class Worker extends RpcEndpoint {
@@ -60,12 +59,13 @@ public class Worker extends RpcEndpoint {
   private final String host;
   private final int port;
 
-  private final RegisterClient registerClient;
   private final TaskDispatcher taskDispatcher;
 
   private final ExecutorService reportToMasterThread;
 
   private RpcEndpointRef master;
+  private RegisterClient registerClient;
+  private ServiceInstance<WorkerNodeDetail> instance;
 
   private final LinkedBlockingQueue<Object> reportMessageQueue = Queues.newLinkedBlockingQueue();
 
@@ -82,7 +82,6 @@ public class Worker extends RpcEndpoint {
     this.THREAD_NUM = conf.getInt("dts.worker.threadNum", 10);
     this.WORKER_ID = AddressUtil.getLocalHost() + "-" + WORKER_GROUP_ID;
 
-    this.registerClient = new RegisterClient(conf, new WorkerNodeChangeListener());
     this.taskDispatcher = new TaskDispatcher(conf, this, tw);
     this.reportToMasterThread = ThreadUtil.newDaemonSingleThreadExecutor("worker-reportToMaster");
     this.reportToMasterThread.submit(new ReportLoop());
@@ -91,19 +90,17 @@ public class Worker extends RpcEndpoint {
   @Override
   public void onStart() {
     logger.info("Starting worker {}:{}", host, port);
-    registerWorker();
-    // TODO add metrics
-  }
-
-  private void registerWorker() {
     try {
-      ServiceInstance<WorkerNodeDetail> instance = ServiceInstance.<WorkerNodeDetail>builder()
-          .address(host)
-          .port(port)
-          .name(RegisterServiceName.WORKER)
-          .payload(new WorkerNodeDetail(WORKER_ID, WORKER_GROUP_ID, THREAD_NUM, tw.taskMethodDetails))
-          .build();
+      registerClient = new RegisterClient(conf, new WorkerNodeChangeListener());
+      registerClient.start();
+      instance = ServiceInstance.<WorkerNodeDetail>builder()
+        .address(host)
+        .port(port)
+        .name(RegisterServiceName.WORKER)
+        .payload(new WorkerNodeDetail(WORKER_ID, WORKER_GROUP_ID, THREAD_NUM, tw.taskMethodDetails))
+        .build();
       registerClient.registerService(instance);
+    // TODO add metrics
     } catch (Exception e) {
       throw new DTSException(e);
     }
@@ -114,12 +111,8 @@ public class Worker extends RpcEndpoint {
   }
 
   @Override
-  public void receive(Object o) {
-  }
-
-  @Override
-  public void receiveAndReply(Object o, RpcCallContext context) {
-    syncMaster(context.senderAddress());
+  public void receive(Object o, RpcAddress senderAddress) {
+    syncMaster(senderAddress);
     if (o instanceof LaunchTask) {
       LaunchTask msg = (LaunchTask)o;
       List<Object> params = deserializeTaskParams(msg.task.getTaskName(), msg.task.getParams());
@@ -134,24 +127,24 @@ public class Worker extends RpcEndpoint {
       } catch (Exception e) {
         message = Throwables.getStackTraceAsString(e);
       }
-      context.reply(new LaunchedTask(msg.task, message));
+      master.send(new LaunchedTask(msg.task, message));
     }
 
     else if (o instanceof KillRunningTask) {
       KillRunningTask msg = (KillRunningTask)o;
       // TODO kill task
       String message = null;
-//      if (taskDispatcher.stopTask(msg.task.getSysId())) {
-//        message = "success";
-//      } else {
-//        message = "Failed to stop task: " + msg.task;
-//      }
-      context.reply(new KilledTask(msg.task, message));
+      //      if (taskDispatcher.stopTask(msg.task.getSysId())) {
+      //        message = "success";
+      //      } else {
+      //        message = "Failed to stop task: " + msg.task;
+      //      }
+      master.send(new KilledTask(msg.task, message));
     }
+  }
 
-    else {
-      context.sendFailure(new DTSException("Worker not support receive msg type: " + o.getClass().getCanonicalName()));
-    }
+  @Override
+  public void receiveAndReply(Object o, RpcCallContext context) {
   }
 
   @Override
@@ -165,7 +158,12 @@ public class Worker extends RpcEndpoint {
 
   @Override
   public void onStop() {
-    registerClient.close();
+    if (registerClient != null) {
+      if (instance != null) {
+        registerClient.unregisterService(instance);
+      }
+      registerClient.close();
+    }
   }
 
   private void syncMaster(RpcAddress address) {

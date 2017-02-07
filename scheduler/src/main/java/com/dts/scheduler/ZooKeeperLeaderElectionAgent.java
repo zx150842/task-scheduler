@@ -13,6 +13,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 
 /**
+ * 用来在多个master之间选择leader节点
+ *
  * @author zhangxin
  */
 public class ZooKeeperLeaderElectionAgent implements LeaderLatchListener {

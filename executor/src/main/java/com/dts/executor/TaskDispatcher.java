@@ -17,6 +17,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
+ * 任务分发器，不断的取出执行器的任务队列中的任务，并从线程池中选择一个线程执行
+ *
  * @author zhangxin
  */
 public class TaskDispatcher {

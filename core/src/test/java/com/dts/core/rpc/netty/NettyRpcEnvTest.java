@@ -77,7 +77,7 @@ public class NettyRpcEnvTest {
   public void testSendMsgToLocal() throws InterruptedException {
     List<String> messages = Lists.newArrayList();
     RpcEndpointRef rpcEndpointRef = env.setupEndpoint("send-locally", new RpcEndpoint(env) {
-      @Override public void receive(Object o) {
+      @Override public void receive(Object o, RpcAddress senderAddress) {
         messages.add((String)o);
       }
     });
@@ -91,7 +91,7 @@ public class NettyRpcEnvTest {
   public void testSendMsgToRemote() {
     List<String> messages = Lists.newArrayList();
     env.setupEndpoint("send-remotely", new RpcEndpoint(env) {
-      @Override public void receive(Object o) {
+      @Override public void receive(Object o, RpcAddress senderAddress) {
         messages.add((String)o);
       }
     });
@@ -201,7 +201,7 @@ public class NettyRpcEnvTest {
     List<String> calledMethods = Lists.newArrayList();
 
     RpcEndpoint endpoint = new RpcEndpoint(env) {
-      @Override public void receive(Object o) {
+      @Override public void receive(Object o, RpcAddress senderAddress) {
         // do nothing
       }
 
@@ -224,7 +224,7 @@ public class NettyRpcEnvTest {
   public void testErrorOnStart() throws InterruptedException {
     final List<Throwable> e = Lists.newArrayList();
     env.setupEndpoint("onError-onStart", new RpcEndpoint(env) {
-      @Override public void receive(Object o) {
+      @Override public void receive(Object o, RpcAddress senderAddress) {
         // do nothing
       }
 
@@ -244,7 +244,7 @@ public class NettyRpcEnvTest {
   public void testErrorOnStop() throws InterruptedException {
     List<Throwable> e = Lists.newArrayList();
     RpcEndpointRef endpointRef = env.setupEndpoint("onError-onStop", new RpcEndpoint(env) {
-      @Override public void receive(Object o) {
+      @Override public void receive(Object o, RpcAddress senderAddress) {
         // do nothing
       }
 
@@ -265,7 +265,7 @@ public class NettyRpcEnvTest {
   public void testErrorInReceive() throws InterruptedException {
     List<Throwable> e = Lists.newArrayList();
     RpcEndpointRef endpointRef = env.setupEndpoint("onError-receive", new RpcEndpoint(env) {
-      @Override public void receive(Object o) {
+      @Override public void receive(Object o, RpcAddress senderAddress) {
         throw new RuntimeException("Oops!");
       }
 
@@ -282,7 +282,7 @@ public class NettyRpcEnvTest {
   public void testSelfCallOnStart() throws InterruptedException {
     final AtomicBoolean callSelfSucc = new AtomicBoolean(false);
     env.setupEndpoint("self-onStart", new RpcEndpoint(env) {
-      @Override public void receive(Object o) {
+      @Override public void receive(Object o, RpcAddress senderAddress) {
         // do nothing
       }
 
@@ -300,7 +300,7 @@ public class NettyRpcEnvTest {
   public void testSelfCallInReceive() throws InterruptedException {
     AtomicBoolean callSelfSucc = new AtomicBoolean(false);
     RpcEndpointRef endpointRef = env.setupEndpoint("self-receive", new RpcEndpoint(env) {
-      @Override public void receive(Object o) {
+      @Override public void receive(Object o, RpcAddress senderAddress) {
         self();
         callSelfSucc.set(true);
       }
@@ -315,7 +315,7 @@ public class NettyRpcEnvTest {
     List<RpcEndpointRef> self = Lists.newArrayList();
 
     RpcEndpointRef endpointRef = env.setupEndpoint("self-onStop", new RpcEndpoint(env) {
-      @Override public void receive(Object o) {
+      @Override public void receive(Object o, RpcAddress senderAddress) {
         // do nothing
       }
 
@@ -333,7 +333,7 @@ public class NettyRpcEnvTest {
     for (int i = 0; i < 100; ++i) {
       AtomicInteger result = new AtomicInteger(0);
       RpcEndpointRef endpointRef = env.setupEndpoint("receive-in-sequence-" + i, new RpcEndpoint(env) {
-        @Override public void receive(Object o) {
+        @Override public void receive(Object o, RpcAddress senderAddress) {
           result.incrementAndGet();
         }
       });
@@ -357,7 +357,7 @@ public class NettyRpcEnvTest {
   public void testStopRpcEndpointRef() throws InterruptedException {
     AtomicInteger onStopCount = new AtomicInteger(0);
     RpcEndpointRef endpointRef = env.setupEndpoint("stop-reentrant", new RpcEndpoint(env) {
-      @Override public void receive(Object o) {
+      @Override public void receive(Object o, RpcAddress senderAddress) {
         // do nothing
       }
 
@@ -455,7 +455,7 @@ public class NettyRpcEnvTest {
   private Tuple2 setupNetworkEndpoint(RpcEnv _env) {
     ConcurrentLinkedQueue<Tuple2> events = Queues.newConcurrentLinkedQueue();
     RpcEndpointRef endpointRef = _env.setupEndpoint("network-events-non-client", new RpcEndpoint(_env) {
-      @Override public void receive(Object o) {
+      @Override public void receive(Object o, RpcAddress senderAddress) {
         if (!"hello".equals(o)) {
           events.add(new Tuple2("receive", o));
         }

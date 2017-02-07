@@ -1,45 +1,18 @@
 buildscript {
-	ext {
-		springBootVersion = '1.4.4.RELEASE'
-	}
 	repositories {
 		jcenter()
 	}
 	dependencies {
-		classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}")
-		classpath("org.springframework:springloaded:1.2.5.RELEASE")
-		classpath("com.bluepapa32:gradle-watch-plugin:0.1.5")
+		classpath("org.springframework.boot:spring-boot-gradle-plugin:$SPRING_BOOT_VERSION")
 	}
 }
 
 apply plugin: 'java'
-apply plugin: 'idea'
 apply plugin: 'org.springframework.boot'
 apply plugin: 'war'
-apply plugin: 'com.bluepapa32.watch'
-
-idea {
-	module {
-		inheritOutputDirs = false
-		outputDir = file("$buildDir/classes/main/")
-		testOutputDir = file("$buildDir/classes/test")
-	}
-}
-
-watch {
-	java {
-		files files("src/main/java")
-		tasks "compileJava"
-	}
-	resources {
-		files fileTree(dir: "src/main/resources", include: "**/*.ftl")
-		tasks "processResources"
-	}
-}
 
 war {
-	baseName = 'admin'
-	version = '0.0.1-SNAPSHOT'
+	archiveName = 'admin.war'
 }
 
 sourceCompatibility = 1.8
@@ -57,10 +30,8 @@ dependencies {
 		exclude group: "org.slf4j"
 	}
 	compile('org.springframework.boot:spring-boot-starter-freemarker')
-	compile('org.mybatis.spring.boot:mybatis-spring-boot-starter:1.2.0')
+	compile("org.mybatis.spring.boot:mybatis-spring-boot-starter:$MYBATIS_SPRING_BOOT_STARTER")
 	compile('org.springframework.boot:spring-boot-starter-web')
-	compile('org.springframework.boot:spring-boot-starter-aop')
-//	compile("com.alibaba:druid:1.0.27")
 	runtime('mysql:mysql-connector-java')
 	providedRuntime('org.springframework.boot:spring-boot-starter-tomcat')
 	testCompile('org.springframework.boot:spring-boot-starter-test')

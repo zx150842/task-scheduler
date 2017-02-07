@@ -6,6 +6,7 @@ import java.io.Serializable;
  * @author zhangxin
  */
 public class TaskConf implements Serializable {
+  private static final long serialVersionUID = -4042396408823866502L;
   // task的唯一id
   private String taskId;
   // task名称，用于找到worker上的实际执行方法

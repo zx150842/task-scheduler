@@ -18,7 +18,7 @@ public class RpcEndpointVerifier extends RpcEndpoint {
     this.dispatcher = dispatcher;
   }
 
-  @Override public void receive(Object o) {
+  @Override public void receive(Object o, RpcAddress senderAddress) {
     throw new DTSException("RpcEndpointVerfier does not implement 'receive'");
   }
 
@@ -30,6 +30,7 @@ public class RpcEndpointVerifier extends RpcEndpoint {
   }
 
   public static class CheckExistence implements Serializable {
+    private static final long serialVersionUID = 3459763496149039321L;
     public final String name;
 
     public CheckExistence(String name) {

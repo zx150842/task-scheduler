@@ -17,6 +17,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
+ * 注册中心，当前为zookeeper实现。主要用来实现master和worker的注册和发现
+ *
  * @author zhangxin
  */
 public class RegisterClient {
@@ -50,7 +52,7 @@ public class RegisterClient {
     }
   }
 
-  public void registerService(ServiceInstance<WorkerNodeDetail> serviceInstance) {
+  public void registerService(ServiceInstance serviceInstance) {
     try {
       serviceDiscovery.registerService(serviceInstance);
     } catch (Exception e) {
@@ -58,7 +60,7 @@ public class RegisterClient {
     }
   }
 
-  public void unregisterService(ServiceInstance<WorkerNodeDetail> serviceInstance) {
+  public void unregisterService(ServiceInstance serviceInstance) {
     try {
       serviceDiscovery.unregisterService(serviceInstance);
     } catch (Exception e) {
@@ -66,7 +68,7 @@ public class RegisterClient {
     }
   }
 
-  public void updateService(ServiceInstance<WorkerNodeDetail> serviceInstance) {
+  public void updateService(ServiceInstance serviceInstance) {
     try {
       serviceDiscovery.updateService(serviceInstance);
     } catch (Exception e) {

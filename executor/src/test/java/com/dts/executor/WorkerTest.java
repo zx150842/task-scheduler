@@ -23,6 +23,7 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.*;
 
@@ -72,4 +73,8 @@ public class WorkerTest {
     assertEquals(message.message, "success");
   }
 
+  @Test
+  public void testStartWorker() throws InterruptedException {
+    TimeUnit.SECONDS.sleep(100);
+  }
 }

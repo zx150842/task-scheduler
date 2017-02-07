@@ -26,4 +26,8 @@ public interface CronTaskDao {
   List<TriggeredTaskInfo> getExecutableByWorkerGroup(@Param("workerGroup") String workerGroup, @Param("manual") boolean manual);
 
   List<TriggeredTaskInfo> getExecutingByTaskId(@Param("taskId") String taskId);
+
+  List<TriggeredTaskInfo> getBySysId(@Param("sysId") String sysId);
+
+  int updateWorkerId(@Param("sysId") String sysId, @Param("workerId") String workerId);
 }

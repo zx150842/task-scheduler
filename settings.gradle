@@ -1,2 +1,2 @@
 rootProject.name = 'task-scheduler'
-include "scheduler", "core", "executor", "admin"
+include "scheduler", "core", "executor", "admin", "executor-example"

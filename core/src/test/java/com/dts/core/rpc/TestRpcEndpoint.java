@@ -29,7 +29,7 @@ public class TestRpcEndpoint extends RpcEndpoint {
     super(null);
   }
 
-  @Override public void receive(Object o) {
+  @Override public void receive(Object o, RpcAddress senderAddress) {
     receiveMessages.add(o);
   }
 

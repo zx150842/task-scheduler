@@ -8,14 +8,14 @@ import org.springframework.stereotype.Service;
 @Service
 public class TestClass {
 
-  @Task("task1")
-  public void method1(String t1, int t2) {
-
+  @Task("logconsoleWithNoParam")
+  public void method1() {
+    System.out.println("do logconsoleWithNoParam");
   }
 
-  @Task("task2")
-  public void method2() {
-
+  @Task("logconsoleWithParam")
+  public void method2(String t1, int t2, boolean t3) {
+    System.out.println("do logconsoleWithParam");
   }
 
   @Task("task3")

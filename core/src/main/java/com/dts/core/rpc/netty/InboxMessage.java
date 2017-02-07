@@ -8,7 +8,9 @@ import java.io.Serializable;
 /**
  * @author zhangxin
  */
-abstract class InboxMessage implements Serializable {}
+abstract class InboxMessage implements Serializable {
+  private static final long serialVersionUID = -7503482413638647221L;
+}
 
 class OnStart extends InboxMessage {}
 

@@ -1,6 +1,7 @@
 package com.dts.scheduler.mysql;
 
 import com.dts.core.TriggeredTaskInfo;
+import com.dts.scheduler.queue.mysql.MysqlExecutingTaskQueue;
 import com.dts.scheduler.queue.mysql.MysqlFinishedTaskQueue;
 
 import org.junit.Before;
@@ -22,6 +23,7 @@ public class MysqlFinishedTaskQueueTest {
 
   @Test
   public void testAdd() {
-    mysqlFinishedTaskQueue.add(task);
+    TriggeredTaskInfo t = new MysqlExecutingTaskQueue().getBySysId("1486447586760");
+    mysqlFinishedTaskQueue.add(t);
   }
 }

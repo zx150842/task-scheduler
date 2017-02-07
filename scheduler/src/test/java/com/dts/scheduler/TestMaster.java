@@ -30,7 +30,7 @@ public class TestMaster extends Master {
   }
 
   @Override
-  public void receive(Object o) {
+  public void receive(Object o, RpcAddress senderAddress) {
     if (o instanceof Heartbeat) {
       messages.add(o);
       masterLatch.countDown();

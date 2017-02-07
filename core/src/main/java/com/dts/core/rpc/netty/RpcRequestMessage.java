@@ -8,6 +8,7 @@ import java.io.Serializable;
  * @author zhangxin
  */
 public class RpcRequestMessage implements Serializable {
+  private static final long serialVersionUID = 3954306718552744594L;
   public final RpcAddress senderAddress;
   public final NettyRpcEndpointRef receiver;
   public final Object content;

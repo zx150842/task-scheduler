@@ -17,7 +17,7 @@ public abstract class RpcEndpoint {
     return rpcEnv;
   }
 
-  public void receive(Object o) {
+  public void receive(Object o, RpcAddress senderAddress) {
     throw new RuntimeException(self() + " does not implement 'receive'");
   }
 

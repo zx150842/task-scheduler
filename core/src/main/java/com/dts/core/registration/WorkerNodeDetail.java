@@ -5,6 +5,8 @@ import org.codehaus.jackson.map.annotate.JsonRootName;
 import java.util.Map;
 
 /**
+ * worker节点的注册信息
+ *
  * @author zhangxin
  */
 @JsonRootName("details")

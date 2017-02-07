@@ -39,4 +39,10 @@ public class MysqlExecutingTaskQueueTest {
       System.out.println(task);
     }
   }
+
+  @Test
+  public void testGetBySysId() {
+    TriggeredTaskInfo t = mysqlExecutingTaskQueue.getBySysId(task.getSysId());
+    System.out.println(t);
+  }
 }
