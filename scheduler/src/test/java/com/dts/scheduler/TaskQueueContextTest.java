@@ -57,7 +57,7 @@ public class TaskQueueContextTest {
       System.out.println(taskConf);
       TriggeredTaskInfo task = new TriggeredTaskInfo(jobConf.getJobId(), jobConf.getWorkerGroup(),
           taskConf.getTaskId(), taskConf.getTaskName(), taskConf.getParams(), IdUtil.getUniqId(), false);
-      task.setTriggerTime(new Timestamp(jobConf.getNextTriggerTime().getTime()));
+      task.setTriggerTime(jobConf.getNextTriggerTime());
       executableTaskQueue.add(task);
       cronTaskQueue.triggeredJob(jobConf);
     }

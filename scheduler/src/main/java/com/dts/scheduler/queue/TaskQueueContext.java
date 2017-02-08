@@ -164,7 +164,7 @@ public class TaskQueueContext {
       TaskConf taskConf,
       String jobId,
       String workerGroup,
-      Timestamp triggerTime,
+      Date triggerTime,
       boolean manualTrigger) {
     TriggeredTaskInfo task = new TriggeredTaskInfo(jobId, workerGroup, taskConf.getTaskId(),
       taskConf.getTaskName(), taskConf.getParams(), IdUtil.getUniqId(), manualTrigger);
@@ -180,7 +180,7 @@ public class TaskQueueContext {
       for (JobConf jobConf : jobConfs) {
         TaskConf taskConf = jobConf.getTasks().get(0);
         TriggeredTaskInfo task = generateTriggerTask(taskConf, jobConf.getJobId(),
-          jobConf.getWorkerGroup(), new Timestamp(jobConf.getNextTriggerTime().getTime()), false);
+          jobConf.getWorkerGroup(), jobConf.getNextTriggerTime(), false);
         executableTaskQueue.add(task);
         cronTaskQueue.triggeredJob(jobConf);
       }

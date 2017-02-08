@@ -10,6 +10,10 @@ subprojects {
         jcenter()
     }
 
+    tasks.withType(JavaCompile) {
+        options.encoding = "UTF-8"
+    }
+
     ext {
         SLF4J_VERSION = '1.7.22'
         GUAVA_VERSION = '20.0'

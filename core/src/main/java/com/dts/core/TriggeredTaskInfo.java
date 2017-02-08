@@ -4,6 +4,7 @@ import com.google.common.base.Objects;
 
 import java.io.Serializable;
 import java.sql.Timestamp;
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -36,11 +37,11 @@ public class TriggeredTaskInfo implements Serializable {
   // task被分配运行的线程名
   transient private String threadName;
 
-  transient private Timestamp triggerTime;
-  transient private Timestamp executableTime;
-  transient private Timestamp launchingTime;
-  transient private Timestamp launchedTime;
-  transient private Timestamp executingTime;
+  transient private Date triggerTime;
+  transient private Date executableTime;
+  transient private Date launchingTime;
+  transient private Date launchedTime;
+  transient private Date executingTime;
 
   public TriggeredTaskInfo() {}
 
@@ -121,39 +122,39 @@ public class TriggeredTaskInfo implements Serializable {
     this.threadName = threadName;
   }
 
-  public Timestamp getTriggerTime() {
+  public Date getTriggerTime() {
     return triggerTime;
   }
 
-  public void setTriggerTime(Timestamp triggerTime) {
+  public void setTriggerTime(Date triggerTime) {
     this.triggerTime = triggerTime;
   }
 
-  public Timestamp getExecutableTime() {
+  public Date getExecutableTime() {
     return executableTime;
   }
 
-  public void setExecutableTime(Timestamp executableTime) {
+  public void setExecutableTime(Date executableTime) {
     this.executableTime = executableTime;
   }
 
-  public Timestamp getLaunchingTime() {
+  public Date getLaunchingTime() {
     return launchingTime;
   }
 
-  public void setLaunchingTime(Timestamp launchingTime) {
+  public void setLaunchingTime(Date launchingTime) {
     this.launchingTime = launchingTime;
   }
 
-  public Timestamp getLaunchedTime() {
+  public Date getLaunchedTime() {
     return launchedTime;
   }
 
-  public void setLaunchedTime(Timestamp launchedTime) {
+  public void setLaunchedTime(Date launchedTime) {
     this.launchedTime = launchedTime;
   }
 
-  public Timestamp getExecutingTime() {
+  public Date getExecutingTime() {
     return executingTime;
   }
 
