@@ -27,9 +27,12 @@ import com.dts.core.util.AddressUtil;
 import com.dts.core.util.DTSConfUtil;
 import com.dts.core.util.Tuple2;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.config.CronTask;
 
 import java.util.List;
 import java.util.Map;
@@ -57,6 +60,7 @@ public class ClientEndpoint extends RpcEndpoint {
   private Map<String, Set<Tuple2<String, String>>> _workerGroupToTasks = Maps.newHashMap();
 
   private final int MASTER_TIMEOUT_MS;
+  private final Gson GSON = new Gson();
 
   private ClientEndpoint(RpcEnv rpcEnv, DTSConf conf) {
     super(rpcEnv);
@@ -83,10 +87,14 @@ public class ClientEndpoint extends RpcEndpoint {
   }
 
   public boolean triggerJob(CronJob cronJob) {
+    List<TaskConf> tasks = GSON.fromJson(cronJob.getTasks(), new TypeToken<List<TaskConf>>(){}.getType());
+    if (tasks == null || tasks.size() != 1) {
+      return false;
+    }
     JobConf jobConf = new JobConf(cronJob.getJobId(), cronJob.getCronExpression(),
-        cronJob.getWorkerGroup(), cronJob.getMaxRunTimeSec(), cronJob.getLastTriggerTime(), new TaskConf());
+        cronJob.getWorkerGroup(), cronJob.getMaxRunTimeSec(), cronJob.getLastTriggerTime(), tasks.get(0));
     for (RpcEndpointRef masterRef : _masterRefs) {
-      masterRef.ask(new DeployMessages.ManualTriggerJob(jobConf));
+      masterRef.send(new DeployMessages.ManualTriggerJob(jobConf));
     }
     return true;
   }

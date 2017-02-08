@@ -1,13 +1,8 @@
 package com.dts.admin.controller;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
-
 import com.dts.admin.common.constant.Constant;
 import com.dts.admin.common.dto.JobDto;
-import com.dts.admin.common.vo.CronJob;
 import com.dts.admin.service.CronJobService;
-import com.dts.core.JobConf;
 import com.dts.core.util.Tuple2;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -111,7 +106,7 @@ public class JobController {
   private boolean checkJob(JobDto jobDto, boolean isAdd) {
     boolean valid =
         jobDto != null
-        && (isAdd || jobDto.getJobId() != null)
+        && (isAdd || (jobDto.getJobId() != null && jobDto.getTaskId() != null))
         && jobDto.getCronExpression() != null
         && jobDto.getTaskName() != null
         && jobDto.getWorkerGroup() != null;

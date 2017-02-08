@@ -22,8 +22,9 @@ import com.dts.scheduler.queue.mysql.MysqlLaunchingTaskQueue;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.sql.Timestamp;
-import java.util.List;
+import java.sql.*;
+import java.util.*;
+import java.util.Date;
 
 /**
  * @author zhangxin
@@ -60,6 +61,35 @@ public class TaskQueueContextTest {
       task.setTriggerTime(jobConf.getNextTriggerTime());
       executableTaskQueue.add(task);
       cronTaskQueue.triggeredJob(jobConf);
+    }
+  }
+
+  @Test
+  public void testJDBCSave() {
+    String url = "jdbc:mysql://test.adstream.rds.sogou/test?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai";
+    String user = "adstream_w";
+    String pwd = "ad63f80e1986";
+    try {
+      Class.forName("com.mysql.jdbc.Driver");
+      Connection conn = DriverManager.getConnection(url, user, pwd);
+      Statement stmt = conn.createStatement();
+//      PreparedStatement pstmt = conn.prepareStatement("insert into dts_cron_jobs"
+//        + "(job_id,tasks,cron_expression,worker_group,status,last_trigger_time)"
+//        + "values(?,?,?,?,?,?)");
+//      pstmt.setString(1, "testJobId");
+//      pstmt.setString(2, "test");
+//      pstmt.setString(3, "20 */30 * * * ?");
+//      pstmt.setString(4, "workerGroup");
+//      pstmt.setInt(5, 0);
+//      pstmt.setTimestamp(6, new Timestamp(System.currentTimeMillis()));
+//      pstmt.execute();
+      PreparedStatement pstmt = conn.prepareStatement("select last_trigger_time from dts_cron_jobs where job_id='testJobId'");
+      ResultSet rs = pstmt.executeQuery();
+      while (rs.next()) {
+        System.out.println(rs.getTimestamp(1));
+      }
+    } catch (Exception e) {
+      e.printStackTrace();
     }
   }
 }

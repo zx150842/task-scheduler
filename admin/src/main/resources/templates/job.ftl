@@ -87,7 +87,7 @@
                                         <td>${item.params!}</td>
                                         <td>${item.status!}</td>
                                         <td>
-                                            <button class="btn btn-xs btn-primary" onclick="showUpdateModal('${item.workerGroup!}','${item.taskName!}','${item.jobId!}','${item.params!}','${item.desc!}','${item.cronExpression!}')">编辑</button>
+                                            <button class="btn btn-xs btn-primary" onclick="showUpdateModal('${item.workerGroup!}','${item.taskName!}','${item.jobId!}','${item.params!}','${item.desc!}','${item.cronExpression!}','${item.taskId!}')">编辑</button>
                                             <button type="button" class="btn btn-xs btn-primary" onclick="triggerJob('${item.jobId!}')">触发</button>
                                             <#if item.status == 1><button type="button" class="btn btn-xs btn-warning" onclick="pauseOrRunJob('${item.jobId!}', 2)">暂停</button></#if>
                                             <#if item.status == 2><button type="button" class="btn btn-xs btn-success" onclick="pauseOrRunJob('${item.jobId!}', 1)">开始</button></#if>
@@ -198,6 +198,7 @@
                         <label for="lastname" class="col-sm-2 control-label">Cron<font color="red">*</font></label>
                         <div class="col-sm-4"><input type="text" class="form-control" id="updateJobCron" placeholder="请输入“Cron”" maxlength="20"></div>
                         <div><input type="hidden" id="updateJobId"></div>
+                        <div><input type="hidden" id="updateTaskId"></div>
                     </div>
                     <hr>
                     <div class="form-group">
@@ -287,13 +288,14 @@
        })
     }
 
-    function showUpdateModal(workerGroup,taskName,jobId,params,desc,cron) {
+    function showUpdateModal(workerGroup,taskName,jobId,params,desc,cron,taskId) {
         $("#updateWorkerGroup").val(workerGroup);
         $("#updateTaskName").val(taskName);
         $("#updateJobId").val(jobId);
         $("#updateTaskParams").val(params);
         $("#updateDesc").val(desc);
         $("#updateJobCron").val(cron);
+        $("#updateTaskId").val(taskId)
         $("#updateDialog").click();
     }
 
@@ -304,6 +306,7 @@
         var jobId = $("#updateJobId").val();
         var workerGroup = $("#updateWorkerGroup").val();
         var taskName = $("#updateTaskName").val();
+        var taskId = $("#updateTaskId").val();
         $.ajax({
             url:'job/update',
             type:'POST',
@@ -314,7 +317,8 @@
                 "taskName":taskName,
                 "desc":desc,
                 "cronExpression":cron,
-                "params":params
+                "params":params,
+                "taskId":taskId
             },
             success:function(data){
                 if (typeof(data) != 'undefined' && data == '0') {

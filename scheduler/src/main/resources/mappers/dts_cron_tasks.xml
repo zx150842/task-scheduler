@@ -42,6 +42,7 @@
     status = 2 launching
     status = 3 launched
     status = 4 executing
+    status = 5 finish
     -->
 
     <insert id="add">
