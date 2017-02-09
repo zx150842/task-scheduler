@@ -1,4 +1,4 @@
-package com.dts.scheduler.queue.mysql.impl;
+package com.dts.scheduler.queue.mysql.vo;
 
 import java.util.Date;
 

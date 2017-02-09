@@ -1,4 +1,4 @@
-package com.dts.scheduler.queue.mysql.impl;
+package com.dts.scheduler.queue.mysql;
 
 import com.dts.scheduler.MybatisUtil;
 

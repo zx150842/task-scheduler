@@ -1,4 +1,4 @@
-package com.dts.scheduler.queue.mysql.impl;
+package com.dts.scheduler.queue.mysql.dao;
 
 import com.dts.core.TriggeredTaskInfo;
 
@@ -13,13 +13,7 @@ public interface CronTaskDao {
 
   int add(TriggeredTaskInfo vo);
 
-  int changeToExecutable(@Param("sysId") String sysId);
-
-  int changeToLaunching(@Param("sysId") String sysId);
-
-  int changeTolaunched(@Param("sysId") String sysId);
-
-  int changeToExecuting(@Param("sysId") String sysId);
+  int changeToExecuting(TriggeredTaskInfo task);
 
   int delete(@Param("sysId") String sysId);
 
@@ -30,4 +24,10 @@ public interface CronTaskDao {
   List<TriggeredTaskInfo> getBySysId(@Param("sysId") String sysId);
 
   int updateWorkerId(@Param("sysId") String sysId, @Param("workerId") String workerId);
+
+  List<TriggeredTaskInfo> getAllExecuting();
+
+  int resume(@Param("sysId") String sysId);
+
+  List<TriggeredTaskInfo> getAllExecutable();
 }
