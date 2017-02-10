@@ -51,24 +51,24 @@ public class TaskDispatcher {
   private class TaskLoop implements Runnable {
 
     @Override public void run() {
-      try {
         while (true) {
-          TaskWrapper tw = receivers.take();
-          String taskName = tw.task.getTaskName();
-          Method method = taskMethodWrapper.taskMethods.get(taskName);
-          if (method == null) {
-            logger.error("Cannot find task method for task name {}, ignore task {}", taskName, tw.task);
-          } else {
-            Object instance = taskMethodWrapper.taskBeans.get(taskName);
-            TaskRunner taskRunner = new TaskRunner(worker, tw, method, instance);
-            threadpool.submit(taskRunner);
+          try {
+            TaskWrapper tw = receivers.take();
+            String taskName = tw.task.getTaskName();
+            Method method = taskMethodWrapper.taskMethods.get(taskName);
+            if (method == null) {
+              logger.error("Cannot find task method for task name {}, ignore task {}", taskName, tw.task);
+            } else {
+              Object instance = taskMethodWrapper.taskBeans.get(taskName);
+              TaskRunner taskRunner = new TaskRunner(worker, tw, method, instance);
+              threadpool.submit(taskRunner);
+            }
+          } catch (InterruptedException e) {
+            // ignore
+          } catch (Exception e) {
+            logger.error("Submit task {} to thread pool error.", e);
           }
         }
-      } catch (InterruptedException e) {
-        // exit
-      } catch (Exception e) {
-        logger.error("Submit task {} to thread pool error.", e);
-      }
     }
   }
 }

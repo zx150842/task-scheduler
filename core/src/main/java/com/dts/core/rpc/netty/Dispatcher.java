@@ -1,5 +1,6 @@
 package com.dts.core.rpc.netty;
 
+import com.google.common.base.Throwables;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Queues;
 import com.google.common.util.concurrent.SettableFuture;
@@ -149,7 +150,7 @@ public class Dispatcher {
   private void postMessage(String endpointName, InboxMessage message, @Nullable RpcCallContext callback) {
     synchronized (this) {
       EndpointData data = endpoints.get(endpointName);
-      Throwable error = null;
+      RuntimeException error = null;
       if (stopped) {
         error = new IllegalStateException("RpcEnv already stopped");
       } else if (data == null) {
@@ -160,6 +161,8 @@ public class Dispatcher {
       }
       if (error != null && callback != null) {
         callback.sendFailure(error);
+      } else if (error != null) {
+        logger.error(Throwables.getStackTraceAsString(error));
       }
     }
   }

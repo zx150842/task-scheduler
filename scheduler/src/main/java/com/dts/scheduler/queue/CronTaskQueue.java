@@ -4,6 +4,7 @@ import com.dts.core.JobConf;
 import com.dts.core.TaskConf;
 
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * @author zhangxin
@@ -21,4 +22,6 @@ public interface CronTaskQueue {
   List<JobConf> getNextTriggerJobs(long noEarlyThan, long noLaterThan);
 
   void triggeredJob(JobConf jobConf);
+
+  ReentrantLock triggerJobLock();
 }

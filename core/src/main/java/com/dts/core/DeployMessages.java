@@ -35,13 +35,6 @@ public class DeployMessages implements Serializable {
   }
 
   public static class Heartbeat implements Serializable {
-    public final String workerId;
-    public final RpcEndpointRef worker;
-
-    public Heartbeat(String workerId, RpcEndpointRef worker) {
-      this.workerId = workerId;
-      this.worker = worker;
-    }
   }
 
   public static class WorkerLastestState implements Serializable {

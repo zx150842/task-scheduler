@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
-<mapper namespace="com.dts.scheduler.queue.mysql.impl.CronJobDao">
-    <resultMap id="baseMap" type="com.dts.scheduler.queue.mysql.impl.CronJob">
+<mapper namespace="com.dts.scheduler.queue.mysql.dao.CronJobDao">
+    <resultMap id="baseMap" type="com.dts.scheduler.queue.mysql.vo.CronJob">
         <result column="job_id" property="jobId"/>
         <result column="tasks" property="tasks"/>
         <result column="cron_expression" property="cronExpression"/>

@@ -74,6 +74,6 @@ public class WorkerTest {
 
   @Test
   public void testStartWorker() throws InterruptedException {
-    TimeUnit.SECONDS.sleep(100);
+    TimeUnit.SECONDS.sleep(180);
   }
 }

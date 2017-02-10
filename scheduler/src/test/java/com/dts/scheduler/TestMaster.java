@@ -10,12 +10,7 @@ import com.dts.scheduler.queue.TaskQueueContext;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
-import static com.dts.core.DeployMessages.ExecutingTask;
-import static com.dts.core.DeployMessages.FinishTask;
-import static com.dts.core.DeployMessages.Heartbeat;
-import static com.dts.core.DeployMessages.LaunchedTask;
-import static com.dts.core.DeployMessages.ManualTriggerJob;
-import static com.dts.core.DeployMessages.WorkerLastestState;
+import static com.dts.core.DeployMessages.*;
 
 /**
  * @author zhangxin

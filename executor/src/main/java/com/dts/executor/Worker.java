@@ -1,5 +1,6 @@
 package com.dts.executor;
 
+import com.dts.core.DeployMessages;
 import com.dts.core.registration.*;
 import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
@@ -29,13 +30,9 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.*;
 
-import static com.dts.core.DeployMessages.KillRunningTask;
-import static com.dts.core.DeployMessages.KilledTask;
-import static com.dts.core.DeployMessages.LaunchTask;
-import static com.dts.core.DeployMessages.LaunchedTask;
+import static com.dts.core.DeployMessages.*;
 
 /**
  * 执行器实现类，主要实现向注册中心注册当前执行器，接收调度器下发的任务，
@@ -52,6 +49,8 @@ public class Worker extends RpcEndpoint {
   private final String WORKER_ID;
   private final String WORKER_GROUP_ID;
   private final int THREAD_NUM;
+  private final int HEARTBEAT_INTERVAL_MS;
+  private final int MASTER_TIMEOUT_MS;
 
   private final TaskMethodWrapper tw;
 
@@ -68,6 +67,8 @@ public class Worker extends RpcEndpoint {
   private ServiceInstance<WorkerNodeDetail> instance;
 
   private final LinkedBlockingQueue<Object> reportMessageQueue = Queues.newLinkedBlockingQueue();
+  private final ScheduledExecutorService sendHeartBeatThread;
+  private ScheduledFuture sendHeartBeatTask;
 
   public Worker(RpcEnv rpcEnv, TaskMethodWrapper tw, DTSConf conf) {
     super(rpcEnv);
@@ -81,7 +82,10 @@ public class Worker extends RpcEndpoint {
     this.WORKER_GROUP_ID = conf.get("dts.worker.groupId");
     this.THREAD_NUM = conf.getInt("dts.worker.threadNum", 10);
     this.WORKER_ID = AddressUtil.getLocalHost() + "-" + WORKER_GROUP_ID;
+    this.HEARTBEAT_INTERVAL_MS = conf.getTransportConf("rpc").connectionTimeoutMs() / 4;
+    this.MASTER_TIMEOUT_MS = conf.getInt("dts.master.timeoutMs", 500);
 
+    this.sendHeartBeatThread = ThreadUtil.newDaemonSingleThreadScheduledExecutor("worker-send-heartbeat");
     this.taskDispatcher = new TaskDispatcher(conf, this, tw);
     this.reportToMasterThread = ThreadUtil.newDaemonSingleThreadExecutor("worker-reportToMaster");
     this.reportToMasterThread.submit(new ReportLoop());
@@ -91,7 +95,7 @@ public class Worker extends RpcEndpoint {
   public void onStart() {
     logger.info("Starting worker {}:{}", host, port);
     try {
-      registerClient = new RegisterClient(conf, new WorkerNodeChangeListener());
+      registerClient = new RegisterClient(conf, new MasterNodeChangeListener());
       registerClient.start();
       instance = ServiceInstance.<WorkerNodeDetail>builder()
         .address(host)
@@ -100,6 +104,17 @@ public class Worker extends RpcEndpoint {
         .payload(new WorkerNodeDetail(WORKER_ID, WORKER_GROUP_ID, THREAD_NUM, tw.taskMethodDetails))
         .build();
       registerClient.registerService(instance);
+      List<RpcRegisterMessage> messages = registerClient.getByServiceName(RegisterServiceName.MASTER);
+      refreshMaster(messages);
+
+      sendHeartBeatTask = sendHeartBeatThread.scheduleAtFixedRate(new Runnable() {
+        @Override public void run() {
+          if (master != null) {
+            logger.info("send heart to master {}", master.address());
+            master.ask(new Heartbeat());
+          }
+        }
+      }, 0, HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS);
     // TODO add metrics
     } catch (Exception e) {
       throw new DTSException(e);
@@ -117,17 +132,13 @@ public class Worker extends RpcEndpoint {
       LaunchTask msg = (LaunchTask)o;
       List<Object> params = deserializeTaskParams(msg.task.getTaskName(), msg.task.getParams());
       TaskWrapper tw = new TaskWrapper(msg.task, params);
-      String message;
       try {
-        if (taskDispatcher.addTask(tw)) {
-          message = "success";
-        } else {
-          message = "Failed to add task to worker task queue";
+        if (!taskDispatcher.addTask(tw)) {
+          logger.error("Failed to add task to worker task {} queue", msg.task);
         }
       } catch (Exception e) {
-        message = Throwables.getStackTraceAsString(e);
+        logger.error(Throwables.getStackTraceAsString(e));
       }
-      master.send(new LaunchedTask(msg.task, message));
     }
 
     else if (o instanceof KillRunningTask) {
@@ -145,6 +156,9 @@ public class Worker extends RpcEndpoint {
 
   @Override
   public void receiveAndReply(Object o, RpcCallContext context) {
+    if (o instanceof Heartbeat) {
+      // do nothing
+    }
   }
 
   @Override
@@ -164,12 +178,34 @@ public class Worker extends RpcEndpoint {
       }
       registerClient.close();
     }
+    if (sendHeartBeatTask != null) {
+      sendHeartBeatTask.cancel(true);
+    }
+    sendHeartBeatThread.shutdownNow();
   }
 
   private void syncMaster(RpcAddress address) {
     if (master == null || !master.address().equals(address)) {
       master = new NettyRpcEndpointRef(conf, new RpcEndpointAddress(address,
           EndpointNames.MASTER_ENDPOINT), (NettyRpcEnv) rpcEnv);
+    }
+  }
+
+  private void refreshMaster(List<RpcRegisterMessage> messages) {
+    for (RpcRegisterMessage message : messages) {
+      try {
+        RpcEndpointAddress address = new RpcEndpointAddress(message.address, EndpointNames.MASTER_ENDPOINT);
+        RpcEndpointRef masterRef = new NettyRpcEndpointRef(conf, address, (NettyRpcEnv) rpcEnv);
+        Future<Boolean> future = masterRef.ask(new AskMaster());
+        Boolean isLeader = future.get(MASTER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        if (isLeader != null && isLeader) {
+          master = masterRef;
+          break;
+        }
+      } catch (Exception e) {
+        logger.error(Throwables.getStackTraceAsString(e));
+        continue;
+      }
     }
   }
 
@@ -191,10 +227,11 @@ public class Worker extends RpcEndpoint {
     }
   }
 
-  class WorkerNodeChangeListener implements ZKNodeChangeListener {
+  class MasterNodeChangeListener implements ZKNodeChangeListener {
 
     @Override
     public void onChange(String serviceName, List<RpcRegisterMessage> messages) {
+      refreshMaster(messages);
     }
 
     @Override

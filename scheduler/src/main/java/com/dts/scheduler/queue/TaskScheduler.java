@@ -3,10 +3,13 @@ package com.dts.scheduler.queue;
 import com.dts.core.DTSConf;
 import com.dts.core.TriggeredTaskInfo;
 
+import com.google.common.collect.ListMultimap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
+import java.util.Map;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 任务调度器，用来选择一个任务以下发到worker上执行
@@ -14,48 +17,52 @@ import java.util.List;
  * @author zhangxin
  */
 public class TaskScheduler {
-  private final DTSConf conf;
 
   private final Logger logger = LoggerFactory.getLogger(TaskScheduler.class);
-  private final ExecutableTaskQueue executableTaskQueue;
-  private final ExecutingTaskQueue executingTaskQueue;
+  private final LinkedBlockingDeque<TriggeredTaskInfo> executableTasks;
+  private final Map<String, String> lastExecuteTaskSysIdMap;
+  private final ListMultimap<String, TriggeredTaskInfo> executingTasks;
+  private final TaskQueueContext context;
 
   private final int PARALLEL_RUNNING_TASK;
 
-  public TaskScheduler(DTSConf conf,
-    ExecutableTaskQueue executableTaskQueue,
-    ExecutingTaskQueue executingTaskQueue) {
-    this.conf = conf;
-    this.executableTaskQueue = executableTaskQueue;
-    this.executingTaskQueue = executingTaskQueue;
+  public TaskScheduler(DTSConf conf, TaskQueueContext context) {
     this.PARALLEL_RUNNING_TASK = conf.getInt("dts.task.parallel.run.num", 1);
+    this.context = context;
+    this.executableTasks = context.executableTaskCache;
+    this.lastExecuteTaskSysIdMap = context.lastExecuteTaskSysIdCache;
+    this.executingTasks = context.executingTaskCache;
   }
 
   /**
    * 从可执行任务队列中选择一个任务下发到worker执行
    * <p>手动触发的任务队列优先级高于自动执行的任务队列</p>
    *
-   * @param workerGroup
    * @return
    */
-  public TriggeredTaskInfo schedule(String workerGroup) {
-    List<TriggeredTaskInfo> tasks = executableTaskQueue.getManualTriggerTasks(workerGroup);
-    if (tasks != null && tasks.size() > 0) {
-      return tasks.get(0);
-    }
-    tasks = executableTaskQueue.getAutoTriggerTasks(workerGroup);
-    if (tasks == null || tasks.isEmpty()) {
-      return null;
-    }
-    for (TriggeredTaskInfo task : tasks) {
-      List<TriggeredTaskInfo> runningTasks = executingTaskQueue.getByTaskId(task.getTaskId());
-      if (runningTasks != null && PARALLEL_RUNNING_TASK > 0 && runningTasks.size() > PARALLEL_RUNNING_TASK) {
-        logger.warn("Task {} current running task is {} over 'dts.task.parallel.run.num' {}",
-          task.getTaskId() + "-" + task.getTaskName(), runningTasks.size(), PARALLEL_RUNNING_TASK);
-        continue;
-      }
+  public TriggeredTaskInfo schedule() throws InterruptedException {
+    TriggeredTaskInfo task = executableTasks.take();
+    if (task.isManualTrigger()) {
       return task;
     }
-    return null;
+    String taskId = task.getTaskId();
+    String lastExecuteTaskSysId = lastExecuteTaskSysIdMap.get(taskId);
+    if (lastExecuteTaskSysId != null && task.getSysId().compareTo(lastExecuteTaskSysId) < 0) {
+      context.skipTask(task);
+      logger.warn("Current scheduled task sysId {} is before taskId {} last executing task sysId {}, "
+          + "drop current task", task.getSysId(), taskId, lastExecuteTaskSysId);
+      return null;
+    }
+    if (!executingTasks.containsKey(taskId)) {
+      return task;
+    }
+    int executingTaskNum = executingTasks.get(taskId).size();
+    if (PARALLEL_RUNNING_TASK > 0 && executingTaskNum > PARALLEL_RUNNING_TASK) {
+      executableTasks.offer(task);
+      logger.warn("Task {} current running task is {} over 'dts.task.parallel.run.num' {}",
+        task.getTaskId() + "-" + task.getTaskName(), executingTaskNum, PARALLEL_RUNNING_TASK);
+      return null;
+    }
+    return task;
   }
 }

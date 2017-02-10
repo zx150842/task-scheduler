@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
-<mapper namespace="com.dts.scheduler.queue.mysql.impl.CronTaskDao">
+<mapper namespace="com.dts.scheduler.queue.mysql.dao.CronTaskDao">
     <resultMap id="baseMap" type="com.dts.core.TriggeredTaskInfo">
         <result column="job_id" property="jobId"/>
         <result column="task_id" property="taskId"/>
@@ -12,8 +12,6 @@
         <result column="worker_id" property="workerId"/>
         <result column="status" property="status"/>
         <result column="executable_time" property="executableTime"/>
-        <result column="launching_time" property="launchingTime"/>
-        <result column="launched_time" property="launchedTime"/>
         <result column="executing_time" property="executingTime"/>
     </resultMap>
 
@@ -33,52 +31,32 @@
         executable_time,
         status,
         trigger_time,
-        ctime
+        ctime,
+        executing_time
     </sql>
 
     <!--
     status = 0 删除
     status = 1 executable
-    status = 2 launching
-    status = 3 launched
-    status = 4 executing
-    status = 5 finish
+    status = 2 executing
+    status = 3 finish
     -->
 
     <insert id="add">
       insert into <include refid="tableName"/>
         (<include refid="columnAll"/>)
         values (#{jobId}, #{taskId}, #{taskName}, #{workerGroup}, #{sysId}, #{params},
-        #{manualTrigger}, #{workerId}, now(), 1, #{triggerTime}, now())
+        #{manualTrigger}, #{workerId}, now(), 1, #{triggerTime}, now(), null)
     </insert>
 
-    <update id="delete">
-        update <include refid="tableName"/>
-        set status = 0
+    <delete id="delete">
+        delete from <include refid="tableName"/>
         where sys_id = #{sysId}
-    </update>
-
-    <update id="changeToExecutable">
-        update <include refid="tableName"/>
-        set status = 1, executable_time = now()
-        where sys_id = #{sysId}
-    </update>
-
-    <update id="changeToLaunching">
-        update <include refid="tableName"/>
-        set status = 2, launching_time = now()
-        where sys_id = #{sysId}
-    </update>
-
-    <update id="changeTolaunched">
-        update <include refid="tableName"/>
-        set status = 3, launched_time = now()
-        where sys_id = #{sysId}
-    </update>
+    </delete>
 
     <update id="changeToExecuting">
         update <include refid="tableName"/>
-        set status = 4, executing_time = now()
+        set status = 2, executing_time = now(), worker_id = #{workerId}
         where sys_id = #{sysId}
     </update>
 
@@ -92,12 +70,11 @@
     <select id="getExecutingByTaskId" resultMap="baseMap">
         select <include refid="columnAll"/>
         from <include refid="tableName"/>
-        where status = 4 and task_id = #{taskId}
+        where status = 2 and task_id = #{taskId}
     </select>
 
     <select id="getBySysId" resultMap="baseMap">
-        select <include refid="columnAll"/>,
-        launched_time, launching_time, executing_time
+        select <include refid="columnAll"/>
         from <include refid="tableName"/>
         where sys_id = #{sysId}
     </select>
@@ -107,4 +84,22 @@
         set worker_id = #{workerId}
         where sys_id = #{sysId}
     </update>
+
+    <select id="getAllExecuting" resultMap="baseMap">
+        select <include refid="columnAll"/>
+        from <include refid="tableName"/>
+        where status = 2 order by id
+    </select>
+
+    <update id="resume">
+        update <include refid="tableName"/>
+        set status = 1
+        where status = 2 and sys_id = #{sysId}
+    </update>
+
+    <select id="getAllExecutable" resultMap="baseMap">
+        select <include refid="columnAll"/>
+        from <include refid="tableName"/>
+        where status = 1 order by id desc
+    </select>
 </mapper>

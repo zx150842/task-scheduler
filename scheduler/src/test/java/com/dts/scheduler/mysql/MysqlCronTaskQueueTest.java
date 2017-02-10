@@ -8,7 +8,7 @@ import com.dts.core.JobConf;
 import com.dts.core.TaskConf;
 import com.dts.scheduler.MybatisUtil;
 import com.dts.scheduler.queue.mysql.MysqlCronTaskQueue;
-import com.dts.scheduler.queue.mysql.impl.CronJobDao;
+import com.dts.scheduler.queue.mysql.dao.CronJobDao;
 
 import org.apache.ibatis.session.SqlSession;
 import org.junit.Before;

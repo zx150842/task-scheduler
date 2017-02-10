@@ -3,8 +3,7 @@ package com.dts.scheduler.queue.mysql;
 import com.dts.core.TriggeredTaskInfo;
 
 import com.dts.scheduler.queue.FinishedTaskQueue;
-import com.dts.scheduler.queue.mysql.impl.AbstractSqlQueue;
-import com.dts.scheduler.queue.mysql.impl.FinishedTaskDao;
+import com.dts.scheduler.queue.mysql.dao.FinishedTaskDao;
 
 /**
  * @author zhangxin

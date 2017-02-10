@@ -1,6 +1,9 @@
 package com.dts.core;
 
+import com.google.common.base.MoreObjects;
 import com.google.common.base.Objects;
+import org.apache.commons.lang3.builder.ReflectionToStringBuilder;
+import org.apache.commons.lang3.builder.ToStringStyle;
 
 import java.io.Serializable;
 import java.sql.Timestamp;
@@ -39,9 +42,10 @@ public class TriggeredTaskInfo implements Serializable {
 
   transient private Date triggerTime;
   transient private Date executableTime;
-  transient private Date launchingTime;
-  transient private Date launchedTime;
   transient private Date executingTime;
+  transient private Date finishTime;
+  transient private Date nextTriggerTime;
+  transient private String executeResult;
 
   public TriggeredTaskInfo() {}
 
@@ -138,28 +142,36 @@ public class TriggeredTaskInfo implements Serializable {
     this.executableTime = executableTime;
   }
 
-  public Date getLaunchingTime() {
-    return launchingTime;
-  }
-
-  public void setLaunchingTime(Date launchingTime) {
-    this.launchingTime = launchingTime;
-  }
-
-  public Date getLaunchedTime() {
-    return launchedTime;
-  }
-
-  public void setLaunchedTime(Date launchedTime) {
-    this.launchedTime = launchedTime;
-  }
-
   public Date getExecutingTime() {
     return executingTime;
   }
 
-  public void setExecutingTime(Timestamp executingTime) {
+  public Date getFinishTime() {
+    return finishTime;
+  }
+
+  public void setFinishTime(Date finishTime) {
+    this.finishTime = finishTime;
+  }
+
+  public void setExecutingTime(Date executingTime) {
     this.executingTime = executingTime;
+  }
+
+  public String getExecuteResult() {
+    return executeResult;
+  }
+
+  public void setExecuteResult(String executeResult) {
+    this.executeResult = executeResult;
+  }
+
+  public Date getNextTriggerTime() {
+    return nextTriggerTime;
+  }
+
+  public void setNextTriggerTime(Date nextTriggerTime) {
+    this.nextTriggerTime = nextTriggerTime;
   }
 
   @Override
@@ -174,5 +186,10 @@ public class TriggeredTaskInfo implements Serializable {
       return sysId.equals(o.sysId);
     }
     return false;
+  }
+
+  @Override
+  public String toString() {
+    return ReflectionToStringBuilder.toString(this, ToStringStyle.SHORT_PREFIX_STYLE);
   }
 }

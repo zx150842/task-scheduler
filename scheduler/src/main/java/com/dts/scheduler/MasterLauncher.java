@@ -13,11 +13,24 @@ import com.dts.scheduler.queue.TaskQueueContext;
  * @author zhangxin
  */
 public class MasterLauncher {
+  private static RpcEnv rpcEnv;
 
   public static void main(String[] args) {
+    Runtime.getRuntime().addShutdownHook(new ShutdownHook());
     String propertyFilePath = "dts.properties";
     DTSConf conf = DTSConfUtil.readFile(propertyFilePath);
     Master master = Master.launchMaster(conf);
-    master.rpcEnv().awaitTermination();
+    rpcEnv = master.rpcEnv();
+    rpcEnv.awaitTermination();
+  }
+
+  static class ShutdownHook extends Thread {
+    @Override
+    public void run() {
+      System.out.println("shutdown");
+      if (rpcEnv != null) {
+        rpcEnv.shutdown();
+      }
+    }
   }
 }

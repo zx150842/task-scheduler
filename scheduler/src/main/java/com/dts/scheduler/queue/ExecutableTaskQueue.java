@@ -11,9 +11,9 @@ public interface ExecutableTaskQueue {
 
   boolean add(TriggeredTaskInfo task);
 
-  boolean resume(TriggeredTaskInfo task);
+  List<TriggeredTaskInfo> getAll();
 
-  boolean remove(String id);
+  boolean remove(String sysId);
 
   List<TriggeredTaskInfo> getManualTriggerTasks(String workerGroup);
 

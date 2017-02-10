@@ -3,8 +3,7 @@ package com.dts.scheduler.queue.mysql;
 import com.dts.core.TriggeredTaskInfo;
 import com.dts.scheduler.MybatisUtil;
 import com.dts.scheduler.queue.ExecutingTaskQueue;
-import com.dts.scheduler.queue.mysql.impl.AbstractSqlQueue;
-import com.dts.scheduler.queue.mysql.impl.CronTaskDao;
+import com.dts.scheduler.queue.mysql.dao.CronTaskDao;
 
 import org.apache.ibatis.session.SqlSession;
 
@@ -16,7 +15,8 @@ import java.util.List;
 public class MysqlExecutingTaskQueue extends AbstractSqlQueue implements ExecutingTaskQueue {
   private static final String PREFIX = CronTaskDao.class.getName();
 
-  @Override public boolean remove(String sysId) {
+  @Override
+  public boolean remove(String sysId) {
     return super.remove(sysId, PREFIX);
   }
 
@@ -24,7 +24,7 @@ public class MysqlExecutingTaskQueue extends AbstractSqlQueue implements Executi
     SqlSession sqlSession = null;
     try {
       sqlSession = MybatisUtil.getSqlSession();
-      int count = sqlSession.update(PREFIX + ".changeToExecuting", task.getSysId());
+      int count = sqlSession.update(PREFIX + ".changeToExecuting", task);
       sqlSession.commit();
       return count > 0;
     } catch (Exception e) {
@@ -58,6 +58,34 @@ public class MysqlExecutingTaskQueue extends AbstractSqlQueue implements Executi
         return tasks.get(0);
       }
       return null;
+    } catch (Exception e) {
+      throw e;
+    } finally {
+      MybatisUtil.closeSqlSession(sqlSession);
+    }
+  }
+
+  @Override public boolean resume(String sysId) {
+    SqlSession sqlSession = null;
+    try {
+      sqlSession = MybatisUtil.getSqlSession();
+      int count = sqlSession.update(PREFIX + ".resume", sysId);
+      sqlSession.commit();
+      return count > 0;
+    } catch (Exception e) {
+      sqlSession.rollback();
+      throw e;
+    } finally {
+      MybatisUtil.closeSqlSession(sqlSession);
+    }
+  }
+
+  @Override public List<TriggeredTaskInfo> getAll() {
+    SqlSession sqlSession = null;
+    try {
+      sqlSession = MybatisUtil.getSqlSession();
+      List<TriggeredTaskInfo> tasks = sqlSession.selectList(PREFIX + ".getAllExecuting");
+      return tasks;
     } catch (Exception e) {
       throw e;
     } finally {

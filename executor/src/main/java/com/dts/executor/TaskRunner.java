@@ -38,9 +38,10 @@ public class TaskRunner implements Runnable {
     }
     try {
       String threadName = Thread.currentThread().getName();
-      worker.addToReportQueue(new ExecutingTask(tw.task, threadName));
+      logger.info("Begin to run task {}, threadName: {}", tw.task, threadName);
       method.invoke(instance, args);
       worker.addToReportQueue(new FinishTask(tw.task, "success"));
+      logger.info("Finish run task {}, threadName: {}", tw.task, threadName);
     } catch (Throwable e) {
       worker.addToReportQueue(new FinishTask(tw.task, Throwables.getStackTraceAsString(e)));
       logger.error("Invoke method {} of task {} failed", method, tw.task, e);

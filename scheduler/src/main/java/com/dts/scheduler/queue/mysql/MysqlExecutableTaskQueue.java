@@ -4,8 +4,7 @@ import com.google.common.collect.Maps;
 
 import com.dts.core.TriggeredTaskInfo;
 import com.dts.scheduler.MybatisUtil;
-import com.dts.scheduler.queue.mysql.impl.AbstractSqlQueue;
-import com.dts.scheduler.queue.mysql.impl.CronTaskDao;
+import com.dts.scheduler.queue.mysql.dao.CronTaskDao;
 
 import org.apache.ibatis.session.SqlSession;
 
@@ -24,23 +23,23 @@ public class MysqlExecutableTaskQueue extends AbstractSqlQueue implements Execut
     return super.add(task, PREFIX);
   }
 
-  @Override public boolean resume(TriggeredTaskInfo task) {
+  @Override
+  public List<TriggeredTaskInfo> getAll() {
     SqlSession sqlSession = null;
     try {
       sqlSession = MybatisUtil.getSqlSession();
-      int count = sqlSession.update(PREFIX + ".changeToExecutable", task.getSysId());
-      sqlSession.commit();
-      return count > 0;
+      List<TriggeredTaskInfo> tasks = sqlSession.selectList(PREFIX + ".getAllExecutable");
+      return tasks;
     } catch (Exception e) {
-      sqlSession.rollback();
       throw e;
     } finally {
       MybatisUtil.closeSqlSession(sqlSession);
     }
   }
 
-  @Override public boolean remove(String sysId) {
-    return true;
+  @Override
+  public boolean remove(String sysId) {
+    return super.remove(sysId, PREFIX);
   }
 
   @Override public List<TriggeredTaskInfo> getManualTriggerTasks(String workerGroup) {

@@ -13,9 +13,8 @@ import com.dts.core.util.CronExpressionUtil;
 import com.dts.core.util.ThreadUtil;
 import com.dts.scheduler.MybatisUtil;
 import com.dts.scheduler.queue.CronTaskQueue;
-import com.dts.scheduler.queue.mysql.impl.AbstractSqlQueue;
-import com.dts.scheduler.queue.mysql.impl.CronJob;
-import com.dts.scheduler.queue.mysql.impl.CronJobDao;
+import com.dts.scheduler.queue.mysql.vo.CronJob;
+import com.dts.scheduler.queue.mysql.dao.CronJobDao;
 
 import org.apache.ibatis.session.SqlSession;
 import org.slf4j.Logger;
@@ -62,26 +61,19 @@ public class MysqlCronTaskQueue extends AbstractSqlQueue implements CronTaskQueu
   @Override
   public List<JobConf> getNextTriggerJobs(long noEarlyThan, long noLaterThan) {
     List<JobConf> toTriggerJobs = Lists.newArrayList();
-    try {
-      lock.lock();
-      Date now = new Date();
-      for (JobConf jobConf : triggerJobs) {
-        if (jobConf.getNextTriggerTime().getTime() > noLaterThan) {
-          break;
-        }
-        if (jobConf.getNextTriggerTime().getTime() < noEarlyThan) {
-          jobConf.setNextTriggerTime(now);
-          logger.warn("Job:{} next trigger time: {} is too early, reset to {}",
-              jobConf.getJobId(), jobConf.getNextTriggerTime(), now);
-        }
-        toTriggerJobs.add(jobConf);
+    Date now = new Date();
+    for (JobConf jobConf : triggerJobs) {
+      if (jobConf.getNextTriggerTime().getTime() > noLaterThan) {
+        break;
       }
-      triggerJobs.removeAll(toTriggerJobs);
-    } finally {
-      if (lock.isHeldByCurrentThread()) {
-        lock.unlock();
+      if (jobConf.getNextTriggerTime().getTime() < noEarlyThan) {
+        jobConf.setNextTriggerTime(now);
+        logger.warn("Job:{} next trigger time: {} is too early, reset to {}",
+            jobConf.getJobId(), jobConf.getNextTriggerTime(), now);
       }
+      toTriggerJobs.add(jobConf);
     }
+    triggerJobs.removeAll(toTriggerJobs);
     return toTriggerJobs;
   }
 
@@ -98,15 +90,11 @@ public class MysqlCronTaskQueue extends AbstractSqlQueue implements CronTaskQueu
       sqlSession.commit();
       jobConf.setLastTriggerTime(lastTriggerTime);
       jobConf.setNextTriggerTime(nextTriggerTime);
-      lock.lock();
       triggerJobs.add(jobConf);
     } catch (Exception e) {
       sqlSession.rollback();
       throw e;
     } finally {
-      if (lock.isHeldByCurrentThread()) {
-        lock.unlock();
-      }
       MybatisUtil.closeSqlSession(sqlSession);
     }
   }
@@ -128,6 +116,10 @@ public class MysqlCronTaskQueue extends AbstractSqlQueue implements CronTaskQueu
       }
     }
     return null;
+  }
+
+  public ReentrantLock triggerJobLock() {
+    return lock;
   }
 
   private void refreshJobMap() {
