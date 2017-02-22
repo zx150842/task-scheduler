@@ -1,5 +1,6 @@
 package com.dts.core.rpc.network;
 
+import com.dts.core.util.AddressUtil;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
@@ -62,7 +63,7 @@ public class RpcIntegrationTest {
       }
     };
     TransportContext context = new TransportContext(conf, rpcHandler);
-    server = context.createServer(TestUtils.getLocalHost(), 10000);
+    server = context.createServer(AddressUtil.getLocalHost(), 10000);
     clientFactory = context.createClientFactory();
     oneWayMsgs = Lists.newArrayList();
   }
@@ -79,7 +80,7 @@ public class RpcIntegrationTest {
   }
 
   private RpcResult sendRPC(String... commands) throws Exception {
-    TransportClient client = clientFactory.createClient(TestUtils.getLocalHost(), server.getPort());
+    TransportClient client = clientFactory.createClient(AddressUtil.getLocalHost(), server.getPort());
     final Semaphore sem = new Semaphore(0);
 
     final RpcResult res = new RpcResult();
@@ -156,7 +157,7 @@ public class RpcIntegrationTest {
   @Test
   public void sendOneWayMessage() throws Exception {
     final String message = "no reply";
-    TransportClient client = clientFactory.createClient(TestUtils.getLocalHost(), server.getPort());
+    TransportClient client = clientFactory.createClient(AddressUtil.getLocalHost(), server.getPort());
     try {
       client.send(Unpooled.wrappedBuffer(message.getBytes(StandardCharsets.UTF_8)).nioBuffer());
       assertEquals(0, client.getHandler().numOutstandingRequests());

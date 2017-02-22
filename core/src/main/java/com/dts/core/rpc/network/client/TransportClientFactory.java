@@ -6,12 +6,15 @@ import com.dts.core.rpc.network.util.IOMode;
 import com.dts.core.rpc.network.util.NettyUtils;
 import com.dts.core.rpc.network.util.TransportConf;
 
+import com.google.common.collect.Maps;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -38,6 +41,7 @@ public class TransportClientFactory implements Closeable {
   private final int numConnectionPerPeer;
 
   private final Class<? extends Channel> socketChannelClass;
+  private final Map<SocketAddress, ClientPool> connectionPool;
   private EventLoopGroup workGroup;
   private PooledByteBufAllocator pooledByteBufAllocator;
 
@@ -47,6 +51,7 @@ public class TransportClientFactory implements Closeable {
     this.numConnectionPerPeer = conf.numConnectionsPerPeer();
     this.rand = new Random();
 
+    connectionPool = Maps.newConcurrentMap();
     IOMode ioMode = IOMode.valueOf(conf.ioMode());
     this.socketChannelClass = NettyUtils.getClientChannelClass(ioMode);
     this.workGroup = NettyUtils.createEventLoop(ioMode, conf.clientThreads(), "client");
@@ -55,12 +60,52 @@ public class TransportClientFactory implements Closeable {
   }
 
   public TransportClient createClient(String remoteHost, int remotePort) throws IOException {
-    return createClient(InetSocketAddress.createUnresolved(remoteHost, remotePort));
+    final InetSocketAddress unresolvedAddress = InetSocketAddress.createUnresolved(remoteHost, remotePort);
+    ClientPool clientPool = connectionPool.get(unresolvedAddress);
+    if (clientPool == null) {
+      connectionPool.putIfAbsent(unresolvedAddress, new ClientPool(numConnectionPerPeer));
+      clientPool = connectionPool.get(unresolvedAddress);
+    }
+    int clientIndex = rand.nextInt(numConnectionPerPeer);
+    TransportClient cachedClient = clientPool.clients[clientIndex];
+    if (cachedClient != null && cachedClient.isActive()) {
+      TransportChannelHandler handler = cachedClient.getChannel().pipeline().get(TransportChannelHandler.class);
+      synchronized (handler) {
+        handler.getResponseHandler().updateTimeOfLastRequest();
+      }
+      if (cachedClient.isActive()) {
+        logger.trace("Returning cached connection to {}: {}",
+          cachedClient.getSocketAddress(), cachedClient);
+        return cachedClient;
+      }
+    }
+
+    final long preResolvedHost = System.nanoTime();
+    final InetSocketAddress resolvedAddress = new InetSocketAddress(remoteHost, remotePort);
+    final long hostResolveTimeMs = (System.nanoTime() - preResolvedHost) / 1000000;
+    if (hostResolveTimeMs > 2000) {
+      logger.warn("DNS resolution for {} took {} ms", resolvedAddress, hostResolveTimeMs);
+    } else {
+      logger.trace("DNS resolution for {} took {} ms", resolvedAddress, hostResolveTimeMs);
+    }
+    synchronized (clientPool.locks[clientIndex]) {
+      cachedClient = clientPool.clients[clientIndex];
+      if (cachedClient != null) {
+        if (cachedClient.isActive()) {
+          logger.trace("Returning cached connection to {}: {}", resolvedAddress, cachedClient);
+          return cachedClient;
+        } else {
+          logger.info("Found inactive connection to {}, creating a new one", resolvedAddress);
+        }
+      }
+      clientPool.clients[clientIndex] = createClient(resolvedAddress);
+      return clientPool.clients[clientIndex];
+    }
   }
 
-  public TransportClient createClient(InetSocketAddress address) throws IOException {
+  private TransportClient createClient(InetSocketAddress address) throws IOException {
     Bootstrap bootstrap = new Bootstrap();
-    bootstrap.group(workGroup).channel(NioSocketChannel.class)
+    bootstrap.group(workGroup).channel(socketChannelClass)
         .option(ChannelOption.TCP_NODELAY, true).option(ChannelOption.SO_KEEPALIVE, true)
         .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, conf.connectionTimeoutMs())
         .option(ChannelOption.ALLOCATOR, pooledByteBufAllocator);
@@ -83,17 +128,43 @@ public class TransportClientFactory implements Closeable {
     }
     TransportClient client = clientRef.get();
     assert client != null : "Channel future completed successfully with null client";
-    logger.info("Successfully created connection to {} after {} ms", address,
-        (System.nanoTime() - preConnect) / 1000000);
+    logger.info("Successfully created connection to {} after {} ms, local address: {}", address,
+        (System.nanoTime() - preConnect) / 1000000, client.getChannel().localAddress());
     return client;
   }
 
   @Override
-  public void close() throws IOException {
-
+  public void close() {
+    for (ClientPool clientPool : connectionPool.values()) {
+      for (int i = 0; i < clientPool.clients.length; ++i) {
+        TransportClient client = clientPool.clients[i];
+        if (client != null) {
+          clientPool.clients[i] = null;
+          try {
+            client.close();
+          } catch (IOException e) {
+            logger.error("IOException should not have been thrown", e);
+          }
+        }
+      }
+    }
+    connectionPool.clear();
     if (workGroup != null) {
       workGroup.shutdownGracefully();
       workGroup = null;
+    }
+  }
+
+  private static class ClientPool {
+    TransportClient[] clients;
+    Object[] locks;
+
+    ClientPool(int size) {
+      clients = new TransportClient[size];
+      locks = new Object[size];
+      for (int i = 0; i < size; ++i) {
+        locks[i] = new Object();
+      }
     }
   }
 }

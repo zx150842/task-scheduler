@@ -101,20 +101,20 @@ public class Outbox {
       public Void call() {
         try {
           TransportClient client = nettyRpcEnv.createClient(rpcAddress);
-          synchronized (this) {
+          synchronized (outbox) {
             outbox.client = client;
             if (stopped) {
               closeClient();
             }
           }
         } catch (IOException e) {
-          synchronized (this) {
+          synchronized (outbox) {
             connectFuture = null;
           }
           handleNetworkFailure(e);
           return null;
         }
-        synchronized (this) {
+        synchronized (outbox) {
           connectFuture = null;
         }
         drainOutbox();

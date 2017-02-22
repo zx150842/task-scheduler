@@ -1,5 +1,6 @@
 package com.dts.scheduler.queue.mysql;
 
+import com.dts.core.metrics.MetricsSystem;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -43,15 +44,15 @@ public class MysqlCronTaskQueue extends AbstractSqlQueue implements CronTaskQueu
   private Map<String, JobConf> jobs = Maps.newHashMap();
   private TreeSet<JobConf> triggerJobs;
 
+  private final MysqlQueueSource mysqlQueueSource;
+
   public MysqlCronTaskQueue(DTSConf conf) {
+    this.mysqlQueueSource = new MysqlQueueSource();
+    MetricsSystem.createMetricsSystem(conf).registerSource(mysqlQueueSource);
     long cronJobRefreshSec = conf.getLong("dts.master.cronJob.refreshSec", 300);
     refreshJobMap();
     backend = ThreadUtil.newDaemonSingleThreadScheduledExecutor("cron-job-refresh");
-    backend.scheduleAtFixedRate(new Runnable() {
-      @Override public void run() {
-        refreshJobMap();
-      }
-    }, cronJobRefreshSec, cronJobRefreshSec, TimeUnit.SECONDS);
+    backend.scheduleAtFixedRate(() -> refreshJobMap(), cronJobRefreshSec, cronJobRefreshSec, TimeUnit.SECONDS);
   }
 
   @Override public List<JobConf> getAllValid() {
@@ -123,6 +124,7 @@ public class MysqlCronTaskQueue extends AbstractSqlQueue implements CronTaskQueu
   }
 
   private void refreshJobMap() {
+    mysqlQueueSource.refreshJobMeter.mark();
     SqlSession sqlSession = null;
     try {
       sqlSession = MybatisUtil.getSqlSession();

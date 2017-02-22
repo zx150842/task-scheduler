@@ -1,6 +1,8 @@
 package com.dts.executor;
 
-import com.dts.core.DeployMessages;
+import com.codahale.metrics.Meter;
+import com.codahale.metrics.Timer;
+import com.dts.core.metrics.MetricsSystem;
 import com.dts.core.registration.*;
 import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
@@ -14,7 +16,6 @@ import com.dts.core.util.AddressUtil;
 import com.dts.core.util.DataTypeUtil;
 import com.dts.core.DTSConf;
 import com.dts.core.rpc.RpcAddress;
-import com.dts.core.rpc.RpcCallContext;
 import com.dts.core.rpc.RpcEndpoint;
 import com.dts.core.rpc.RpcEndpointRef;
 import com.dts.core.rpc.RpcEnv;
@@ -30,7 +31,9 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.*;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static com.dts.core.DeployMessages.*;
 
@@ -49,7 +52,7 @@ public class Worker extends RpcEndpoint {
   private final String WORKER_ID;
   private final String WORKER_GROUP_ID;
   private final int THREAD_NUM;
-  private final int HEARTBEAT_INTERVAL_MS;
+  private final int SYNC_MASTER_SEC;
   private final int MASTER_TIMEOUT_MS;
 
   private final TaskMethodWrapper tw;
@@ -62,13 +65,18 @@ public class Worker extends RpcEndpoint {
 
   private final ExecutorService reportToMasterThread;
 
-  private RpcEndpointRef master;
+  public Optional<RpcEndpointRef> master = Optional.empty();
+  public final RpcEndpointRef UNKNOWN_MASTER;
+  private static final ReentrantLock masterLock = new ReentrantLock();
   private RegisterClient registerClient;
   private ServiceInstance<WorkerNodeDetail> instance;
 
-  private final LinkedBlockingQueue<Object> reportMessageQueue = Queues.newLinkedBlockingQueue();
-  private final ScheduledExecutorService sendHeartBeatThread;
-  private ScheduledFuture sendHeartBeatTask;
+  private final LinkedBlockingQueue<TaskResult> reportMessageQueue = Queues.newLinkedBlockingQueue();
+  private final ScheduledExecutorService syncMasterThread;
+  private ScheduledFuture syncMasterTask;
+
+  private final MetricsSystem metricsSystem;
+  public final WorkerSource workerSource;
 
   public Worker(RpcEnv rpcEnv, TaskMethodWrapper tw, DTSConf conf) {
     super(rpcEnv);
@@ -82,13 +90,17 @@ public class Worker extends RpcEndpoint {
     this.WORKER_GROUP_ID = conf.get("dts.worker.groupId");
     this.THREAD_NUM = conf.getInt("dts.worker.threadNum", 10);
     this.WORKER_ID = AddressUtil.getLocalHost() + "-" + WORKER_GROUP_ID;
-    this.HEARTBEAT_INTERVAL_MS = conf.getTransportConf("rpc").connectionTimeoutMs() / 4;
+    this.SYNC_MASTER_SEC = conf.getInt("dts.worker.syncMasterSec", 60);
     this.MASTER_TIMEOUT_MS = conf.getInt("dts.master.timeoutMs", 500);
+    this.UNKNOWN_MASTER = new NettyRpcEndpointRef(conf, new RpcEndpointAddress("unknown", -1, "unknown"), (NettyRpcEnv) rpcEnv);
 
-    this.sendHeartBeatThread = ThreadUtil.newDaemonSingleThreadScheduledExecutor("worker-send-heartbeat");
+    this.syncMasterThread = ThreadUtil.newDaemonSingleThreadScheduledExecutor("worker-syncMaster");
     this.taskDispatcher = new TaskDispatcher(conf, this, tw);
     this.reportToMasterThread = ThreadUtil.newDaemonSingleThreadExecutor("worker-reportToMaster");
     this.reportToMasterThread.submit(new ReportLoop());
+
+    this.metricsSystem = MetricsSystem.createMetricsSystem(conf);
+    this.workerSource = new WorkerSource(this);
   }
 
   @Override
@@ -104,34 +116,33 @@ public class Worker extends RpcEndpoint {
         .payload(new WorkerNodeDetail(WORKER_ID, WORKER_GROUP_ID, THREAD_NUM, tw.taskMethodDetails))
         .build();
       registerClient.registerService(instance);
-      List<RpcRegisterMessage> messages = registerClient.getByServiceName(RegisterServiceName.MASTER);
-      refreshMaster(messages);
 
-      sendHeartBeatTask = sendHeartBeatThread.scheduleAtFixedRate(new Runnable() {
+      syncMasterTask = syncMasterThread.scheduleAtFixedRate(new Runnable() {
         @Override public void run() {
-          if (master != null) {
-            logger.info("send heart to master {}", master.address());
-            master.ask(new Heartbeat());
-          }
+          refreshMaster();
         }
-      }, 0, HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS);
-    // TODO add metrics
+      }, 0, SYNC_MASTER_SEC, TimeUnit.SECONDS);
+      logger.info("Worker {} on {} started", WORKER_ID, rpcEnv.address());
+
+      metricsSystem.registerSource(workerSource);
+      metricsSystem.start();
     } catch (Exception e) {
       throw new DTSException(e);
     }
   }
 
-  public boolean addToReportQueue(Object message) {
+  public boolean addToReportQueue(TaskResult message) {
     return reportMessageQueue.offer(message);
   }
 
   @Override
   public void receive(Object o, RpcAddress senderAddress) {
-    syncMaster(senderAddress);
+    workerSource.taskReceiveMeter.mark();
+    resetMaster(senderAddress);
     if (o instanceof LaunchTask) {
       LaunchTask msg = (LaunchTask)o;
       List<Object> params = deserializeTaskParams(msg.task.getTaskName(), msg.task.getParams());
-      TaskWrapper tw = new TaskWrapper(msg.task, params);
+      TaskWrapper tw = new TaskWrapper(msg.task, params, workerSource.taskTotalTimer.time());
       try {
         if (!taskDispatcher.addTask(tw)) {
           logger.error("Failed to add task to worker task {} queue", msg.task);
@@ -150,23 +161,15 @@ public class Worker extends RpcEndpoint {
       //      } else {
       //        message = "Failed to stop task: " + msg.task;
       //      }
-      master.send(new KilledTask(msg.task, message));
-    }
-  }
-
-  @Override
-  public void receiveAndReply(Object o, RpcCallContext context) {
-    if (o instanceof Heartbeat) {
-      // do nothing
+      reportMessageQueue.offer(new TaskResult(new KilledTask(msg.task, message), workerSource.taskTotalTimer.time()));
     }
   }
 
   @Override
   public void onDisconnected(RpcAddress remoteAddress) {
-    if (master.address().equals(remoteAddress)) {
-      logger.info("{} Disassociated", remoteAddress);
-      logger.error("Connection to master failed! Waiting for master to reconnect");
-      master = null;
+    logger.info("{} Disassociated", remoteAddress);
+    if (remoteAddress.equals(master.orElse(UNKNOWN_MASTER).address())) {
+      logger.info("Worker client to master: {} Disassociated", master.orElse(UNKNOWN_MASTER).address());
     }
   }
 
@@ -178,33 +181,67 @@ public class Worker extends RpcEndpoint {
       }
       registerClient.close();
     }
-    if (sendHeartBeatTask != null) {
-      sendHeartBeatTask.cancel(true);
+    if (syncMasterTask != null) {
+      syncMasterTask.cancel(true);
     }
-    sendHeartBeatThread.shutdownNow();
+    syncMasterThread.shutdownNow();
+    metricsSystem.report();
+    metricsSystem.stop();
   }
 
-  private void syncMaster(RpcAddress address) {
-    if (master == null || !master.address().equals(address)) {
-      master = new NettyRpcEndpointRef(conf, new RpcEndpointAddress(address,
-          EndpointNames.MASTER_ENDPOINT), (NettyRpcEnv) rpcEnv);
+  private void resetMaster(RpcAddress address) {
+    if (!master.orElse(UNKNOWN_MASTER).address().equals(address)) {
+      try {
+        masterLock.lock();
+        RpcAddress masterAddress = master.orElse(UNKNOWN_MASTER).address();
+        logger.warn("Receive message from sender: {}, current master: {}, change master to sender",
+          address, masterAddress);
+        master = Optional.of(new NettyRpcEndpointRef(conf, new RpcEndpointAddress(address, EndpointNames.MASTER_ENDPOINT), (NettyRpcEnv) rpcEnv));
+      } finally {
+        if (masterLock.isHeldByCurrentThread()) {
+          masterLock.unlock();
+        }
+      }
+    }
+  }
+
+  private void refreshMaster() {
+    try {
+      masterLock.lock();
+      List<RpcRegisterMessage> messages = registerClient.getByServiceName(RegisterServiceName.MASTER);
+      refreshMaster(messages);
+    } finally {
+      if (masterLock.isHeldByCurrentThread()) {
+        masterLock.unlock();
+      }
     }
   }
 
   private void refreshMaster(List<RpcRegisterMessage> messages) {
-    for (RpcRegisterMessage message : messages) {
-      try {
-        RpcEndpointAddress address = new RpcEndpointAddress(message.address, EndpointNames.MASTER_ENDPOINT);
-        RpcEndpointRef masterRef = new NettyRpcEndpointRef(conf, address, (NettyRpcEnv) rpcEnv);
-        Future<Boolean> future = masterRef.ask(new AskMaster());
-        Boolean isLeader = future.get(MASTER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-        if (isLeader != null && isLeader) {
-          master = masterRef;
-          break;
+    workerSource.syncMasterMeter.mark();
+    try {
+      masterLock.lock();
+      for (RpcRegisterMessage message : messages) {
+        try {
+          RpcEndpointAddress address = new RpcEndpointAddress(message.address, EndpointNames.MASTER_ENDPOINT);
+          RpcEndpointRef masterRef = new NettyRpcEndpointRef(conf, address, (NettyRpcEnv) rpcEnv);
+          Future<Boolean> future = masterRef.ask(new AskMaster());
+          Boolean isLeader = future.get(MASTER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+          if (isLeader != null && isLeader) {
+            master = Optional.of(masterRef);
+            break;
+          }
+        } catch (Exception e) {
+          logger.error(Throwables.getStackTraceAsString(e));
+          continue;
         }
-      } catch (Exception e) {
-        logger.error(Throwables.getStackTraceAsString(e));
-        continue;
+      }
+      if (!master.isPresent()) {
+        logger.error("Cannot find master!");
+      }
+    } finally {
+      if (masterLock.isHeldByCurrentThread()) {
+        masterLock.unlock();
       }
     }
   }
@@ -215,8 +252,14 @@ public class Worker extends RpcEndpoint {
     public void run() {
       while (true) {
         try {
-          Object message = reportMessageQueue.take();
-          master.send(message);
+          TaskResult message = reportMessageQueue.take();
+          if (!master.isPresent()) {
+            refreshMaster();
+          }
+          if (master.isPresent()) {
+            master.get().send(message.task);
+            message.taskContext.stop();
+          }
         } catch (InterruptedException e) {
           // exit
         } catch (Exception e) {

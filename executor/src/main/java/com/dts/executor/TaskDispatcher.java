@@ -1,5 +1,7 @@
 package com.dts.executor;
 
+import com.codahale.metrics.Timer;
+import com.dts.core.metrics.MetricsSystem;
 import com.google.common.collect.Queues;
 
 import com.dts.core.TriggeredTaskInfo;
@@ -25,18 +27,23 @@ public class TaskDispatcher {
   private final Logger logger = LoggerFactory.getLogger(getClass());
 
   private final LinkedBlockingQueue<TaskWrapper> receivers = Queues.newLinkedBlockingQueue();
-  private final ThreadPoolExecutor threadpool;
+  private final ThreadPoolExecutor threadPool;
   private final ExecutorService dispatchThread;
   private final TaskMethodWrapper taskMethodWrapper;
+  private final DTSConf conf;
   private final Worker worker;
+  private final TaskDispatcherSource taskDispatcherSource;
 
   public TaskDispatcher(DTSConf conf, Worker worker, TaskMethodWrapper taskMethodWrapper) {
+    this.conf = conf;
     this.worker = worker;
     this.taskMethodWrapper = taskMethodWrapper;
+    this.dispatchThread = ThreadUtil.newDaemonSingleThreadExecutor("worker-dispatcher");
+    this.dispatchThread.submit(new TaskLoop());
     int threadNum = conf.getInt("dts.worker.threadPool.threadCount", 10);
-    threadpool = ThreadUtil.newDaemonFixedThreadPool(threadNum, "worker-task-threadpool");
-    dispatchThread = ThreadUtil.newDaemonSingleThreadExecutor("worker-dispatcher");
-    dispatchThread.submit(new TaskLoop());
+    this.threadPool = ThreadUtil.newDaemonFixedThreadPool(threadNum, "worker-task-threadpool");
+    this.taskDispatcherSource = new TaskDispatcherSource(this);
+    MetricsSystem.createMetricsSystem(conf).registerSource(taskDispatcherSource);
   }
 
   public boolean addTask(TaskWrapper tw) {
@@ -46,6 +53,10 @@ public class TaskDispatcher {
       logger.error("Couldn't add task {} to task queue", e);
       throw new RuntimeException(e);
     }
+  }
+
+  public ThreadPoolExecutor threadpool() {
+    return threadPool;
   }
 
   private class TaskLoop implements Runnable {
@@ -60,8 +71,8 @@ public class TaskDispatcher {
               logger.error("Cannot find task method for task name {}, ignore task {}", taskName, tw.task);
             } else {
               Object instance = taskMethodWrapper.taskBeans.get(taskName);
-              TaskRunner taskRunner = new TaskRunner(worker, tw, method, instance);
-              threadpool.submit(taskRunner);
+              TaskRunner taskRunner = new TaskRunner(worker, conf, tw, method, instance);
+              threadPool.submit(taskRunner);
             }
           } catch (InterruptedException e) {
             // ignore

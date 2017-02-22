@@ -99,7 +99,7 @@ public class TransportChannelHandler extends SimpleChannelInboundHandler<Message
             System.nanoTime() - responseHandler.getTimeOfLastRequestNs() > requestTimeoutNs;
         if (e.state() == IdleState.ALL_IDLE && isActuallyOverdue) {
           String address = NettyUtils.getRemoteAddress(ctx.channel());
-          logger.error("Connection to {} has been quiet for {} ms while there are outstanding "
+          logger.warn("Connection to {} has been quiet for {} ms while there are outstanding "
               + "requests. Assuming connection is dead; please adjust network.timeout if "
               + "this is wrong.", address, requestTimeoutNs / 1000 / 1000);
           client.timeOut();

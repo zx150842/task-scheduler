@@ -10,6 +10,10 @@ dependencies {
     compile group: 'org.apache.commons', name: 'commons-lang3', version: "$COMMONS_LANG_VERSION"
     compile group: 'com.google.code.findbugs', name: 'jsr305', version: "$JSR305_VERSION"
     compile group: 'com.google.code.gson', name: 'gson', version: "$GSON_VERSION"
+    compile group: 'io.dropwizard.metrics', name: 'metrics-core', version: "$METRICS_VERSION"
+    compile group: 'io.dropwizard.metrics', name: 'metrics-jvm', version: "$METRICS_VERSION"
+    compile group: 'io.dropwizard.metrics', name: 'metrics-graphite', version: "$METRICS_VERSION"
+    compile group: 'com.github.davidb', name: 'metrics-influxdb', version: "$METRICS_INFLUXDB_VERSION"
 
     testCompile group: 'junit', name: 'junit', version: '4+'
     testCompile group: 'org.mockito', name: 'mockito-core', version: "$MOCKITO_VERSION"

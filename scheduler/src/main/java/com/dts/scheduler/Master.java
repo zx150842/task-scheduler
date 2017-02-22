@@ -1,5 +1,6 @@
 package com.dts.scheduler;
 
+import com.dts.core.metrics.MetricsSystem;
 import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -12,7 +13,6 @@ import com.dts.core.registration.RegisterServiceName;
 import com.dts.core.registration.RpcRegisterMessage;
 import com.dts.core.registration.ZKNodeChangeListener;
 import com.dts.core.util.AddressUtil;
-import com.dts.core.util.DTSConfUtil;
 import com.dts.core.util.ThreadUtil;
 import com.dts.core.rpc.RpcAddress;
 import com.dts.core.rpc.RpcCallContext;
@@ -25,14 +25,12 @@ import com.dts.core.rpc.netty.NettyRpcEndpointRef;
 import com.dts.core.rpc.netty.NettyRpcEnv;
 import com.dts.scheduler.queue.TaskQueueContext;
 
-import com.google.common.collect.Queues;
 import org.apache.curator.x.discovery.ServiceInstance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -63,22 +61,27 @@ public class Master extends RpcEndpoint {
 
   public static final String SYSTEM_NAME = "dtsMaster";
 
-  private final TaskQueueContext taskQueueContext;
+  public final TaskQueueContext taskQueueContext;
   private final WorkerScheduler workerScheduler;
 
-  private RecoveryState state = RecoveryState.STANDBY;
+  public RecoveryState state = RecoveryState.STANDBY;
   private ZooKeeperLeaderElectionAgent leaderElectionAgent;
   private ScheduledFuture syncWorkerTask;
   private RegisterClient registerClient;
   private ServiceInstance instance;
 
-  public Master(RpcEnv rpcEnv, RpcAddress address, DTSConf conf, TaskQueueContext taskQueueContext) {
+  private final MetricsSystem metricsSystem;
+  private final MasterSource masterSource;
+
+  public Master(RpcEnv rpcEnv, RpcAddress address, DTSConf conf) {
     super(rpcEnv);
     this.address = address;
     this.conf = conf;
     this.SYNC_WORKER_SEC = conf.getLong("dts.master.syncWorkerSec", 60);
     this.WORKER_TIMEOUT_MS = conf.getLong("dts.worker.timeoutMs", 60) * 1000;
-    this.taskQueueContext = taskQueueContext;
+    this.metricsSystem = MetricsSystem.createMetricsSystem(conf);
+    this.masterSource = new MasterSource(this);
+    this.taskQueueContext = new TaskQueueContext(conf);
     this.workerScheduler = new WorkerScheduler(this);
 
     this.syncZKWorkerThread = ThreadUtil.newDaemonSingleThreadScheduledExecutor("sync-zookeeper-workers-thread");
@@ -98,6 +101,9 @@ public class Master extends RpcEndpoint {
           .name(RegisterServiceName.MASTER)
           .build();
       registerClient.registerService(instance);
+
+      metricsSystem.registerSource(masterSource);
+      metricsSystem.start();
     } catch (Exception e) {
       throw new DTSException(e);
     }
@@ -108,17 +114,10 @@ public class Master extends RpcEndpoint {
       return;
     }
     reregisterWorkers();
-    syncWorkerTask = syncZKWorkerThread.scheduleAtFixedRate(new Runnable() {
-      @Override public void run() {
-        self().send(new SyncZKWorkers());
-      }
-    }, 0, SYNC_WORKER_SEC, TimeUnit.SECONDS);
+    syncWorkerTask = syncZKWorkerThread.scheduleAtFixedRate(
+      () -> self().send(new SyncZKWorkers()), 0, SYNC_WORKER_SEC, TimeUnit.SECONDS);
 
-    sendTaskToWorkThread.submit(new Runnable() {
-      @Override public void run() {
-        schedule();
-      }
-    });
+    sendTaskToWorkThread.submit(() -> schedule());
 
     taskQueueContext.start();
 
@@ -140,6 +139,7 @@ public class Master extends RpcEndpoint {
     syncZKWorkerThread.shutdownNow();
     sendTaskToWorkThread.shutdownNow();
     leaderElectionAgent.stop();
+    metricsSystem.stop();
   }
 
   public void electedLeader() {
@@ -157,6 +157,7 @@ public class Master extends RpcEndpoint {
     }
 
     else if (o instanceof RevokedLeadership) {
+      // TODO not exit, only stop
       logger.error("Leadership has been revoked -- master shutting down.");
       System.exit(0);
     }
@@ -168,6 +169,11 @@ public class Master extends RpcEndpoint {
     else if (o instanceof FinishTask) {
       FinishTask msg = (FinishTask)o;
       taskQueueContext.completeTask(msg.task.getSysId(), msg.message);
+      if ("success".equals(msg.message)) {
+        masterSource.successTaskMeter.mark();
+      } else {
+        masterSource.failTaskMeter.mark();
+      }
     }
 
     else if (o instanceof ManualTriggerJob) {
@@ -204,12 +210,6 @@ public class Master extends RpcEndpoint {
       }
     }
 
-    else if (content instanceof Heartbeat) {
-      logger.info("receive heartbeat from address:{}", context.senderAddress());
-      Heartbeat msg = (Heartbeat)content;
-      context.reply("ok");
-    }
-
     else {
       context.sendFailure(new DTSException("Master not support receive msg type: " + content.getClass().getCanonicalName()));
     }
@@ -237,9 +237,11 @@ public class Master extends RpcEndpoint {
             task.setWorkerId(worker.id);
             taskQueueContext.executingTask(task);
             worker.endpoint.send(new LaunchTask(task));
+            masterSource.sendTaskMeter.mark();
           } else {
             logger.info("No worker is valid, resume task {}", task);
             taskQueueContext.resumeTask(task);
+            masterSource.resumeTaskMeter.mark();
           }
         }
       } catch (InterruptedException e) {
@@ -249,6 +251,7 @@ public class Master extends RpcEndpoint {
   }
 
   private boolean reregisterWorkers() {
+    masterSource.syncWorkerMeter.mark();
     List<RpcRegisterMessage> messages = registerClient.getByServiceName(RegisterServiceName.WORKER);
     try {
       if (workerLock.tryLock()) {
@@ -267,11 +270,6 @@ public class Master extends RpcEndpoint {
           RpcEndpointRef workerRef = new NettyRpcEndpointRef(conf, new RpcEndpointAddress(message.address, EndpointNames.WORKER_ENDPOINT),
               (NettyRpcEnv) rpcEnv);
           WorkerInfo workerInfo = new WorkerInfo(workerId, message.detail.getWorkerGroup(), workerRef);
-//          if (_idToWorker.containsKey(workerId)) {
-//            logger.warn("Worker {} has already registered, ignore worker [address={}]",
-//                workerId, message.address);
-//            continue;
-//          }
           idToWorker.put(workerId, workerInfo);
           addressToWorker.put(message.address, workerInfo);
           if (workerGroups.containsKey(workerInfo.groupId)) {
@@ -341,9 +339,9 @@ public class Master extends RpcEndpoint {
   }
 
   public static Master launchMaster(DTSConf conf) {
-    RpcEnv rpcEnv = RpcEnv.create(SYSTEM_NAME, AddressUtil.getLocalHost(), 0, conf, false);
-    TaskQueueContext context = new TaskQueueContext(conf);
-    Master master = new Master(rpcEnv, rpcEnv.address(), conf, context);
+    int port = conf.getInt("dts.master.port", 0);
+    RpcEnv rpcEnv = RpcEnv.create(SYSTEM_NAME, AddressUtil.getLocalHost(), port, conf, false);
+    Master master = new Master(rpcEnv, rpcEnv.address(), conf);
     rpcEnv.setupEndpoint(EndpointNames.MASTER_ENDPOINT, master);
     return master;
   }

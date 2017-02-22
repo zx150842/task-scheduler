@@ -100,7 +100,7 @@ public class NettyRpcEnv extends RpcEnv {
   public ThreadPoolExecutor clientConnectionExecutor() { return clientConnectionExecutor; }
 
   public TransportClient createClient(RpcAddress address) throws IOException {
-    TransportClient client = clientFactory.createClient(new InetSocketAddress(address.host, address.port));
+    TransportClient client = clientFactory.createClient(address.host, address.port);
     clientTL.set(client);
     return client;
   }

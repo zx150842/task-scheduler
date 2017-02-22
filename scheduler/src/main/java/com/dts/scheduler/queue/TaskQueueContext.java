@@ -1,9 +1,11 @@
 package com.dts.scheduler.queue;
 
 import com.dts.core.*;
+import com.dts.core.metrics.MetricsSystem;
 import com.dts.core.util.CronExpressionUtil;
 import com.dts.core.util.IdUtil;
 import com.dts.core.util.ThreadUtil;
+import com.dts.scheduler.MasterSource;
 import com.dts.scheduler.queue.mysql.MysqlFinishedTaskQueue;
 
 import com.google.common.base.Throwables;
@@ -16,7 +18,6 @@ import java.util.*;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.dts.scheduler.queue.mysql.MysqlCronTaskQueue;
@@ -44,16 +45,20 @@ public class TaskQueueContext {
   private final long TASK_TIMEOUT_CHECK_MS;
   private final long TASK_MAX_EXECUTING_TIME_MS;
 
-  public final LinkedBlockingDeque<TriggeredTaskInfo> executableTaskCache = Queues.newLinkedBlockingDeque();
+  public final LinkedBlockingDeque<TriggeredTaskInfo> executableTaskCache =
+      Queues.newLinkedBlockingDeque();
   public final Map<String, String> lastExecuteTaskSysIdCache = Maps.newHashMap();
-  public final ListMultimap<String, TriggeredTaskInfo> executingTaskCache = ArrayListMultimap.create();
+  public final ListMultimap<String, TriggeredTaskInfo> executingTaskCache =
+      ArrayListMultimap.create();
+
+  public final TaskQueueSource taskQueueSource;
 
   public TaskQueueContext(DTSConf conf) {
     TASK_TRIGGER_INTERVAL_MS = conf.getLong("dts.task.trigger.intervalMs", 1000);
-    TASK_TIMEOUT_CHECK_MS =  conf.getLong("dts.task.timeout.checkMs", 1000);
+    TASK_TIMEOUT_CHECK_MS = conf.getLong("dts.task.timeout.checkMs", 1000);
     TASK_MAX_EXECUTING_TIME_MS = conf.getLong("dts.task.max.executingSec", 3600) * 1000;
     String queueType = conf.get("dts.task.queue.type", "mysql");
-   if ("mysql".equals(queueType)) {
+    if ("mysql".equals(queueType)) {
       cronTaskQueue = new MysqlCronTaskQueue(conf);
       executableTaskQueue = new MysqlExecutableTaskQueue();
       executingTaskQueue = new MysqlExecutingTaskQueue();
@@ -61,9 +66,13 @@ public class TaskQueueContext {
     } else {
       throw new IllegalArgumentException("Not Support 'dts.task.queue.type'= " + queueType);
     }
+    this.taskQueueSource = new TaskQueueSource();
+    MetricsSystem.createMetricsSystem(conf).registerSource(taskQueueSource);
     this.taskScheduler = new TaskScheduler(conf, this);
-    this.generateExecutableTaskThread = ThreadUtil.newDaemonSingleThreadScheduledExecutor("task-generator");
-    this.executingTaskTimeoutCheckThread = ThreadUtil.newDaemonSingleThreadScheduledExecutor("timeout-executing-task-remove");
+    this.generateExecutableTaskThread =
+        ThreadUtil.newDaemonSingleThreadScheduledExecutor("task-generator");
+    this.executingTaskTimeoutCheckThread =
+        ThreadUtil.newDaemonSingleThreadScheduledExecutor("timeout-executing-task-remove");
     initCache();
   }
 
@@ -80,9 +89,10 @@ public class TaskQueueContext {
   }
 
   public void start() {
-    generateExecutableTaskThread
-      .scheduleAtFixedRate(new CronTaskGenerator(),0L, TASK_TRIGGER_INTERVAL_MS / 2, TimeUnit.MILLISECONDS);
-    executingTaskTimeoutCheckThread.scheduleAtFixedRate(new TaskTimeOutCheck(), 0L, TASK_TIMEOUT_CHECK_MS, TimeUnit.MILLISECONDS);
+    generateExecutableTaskThread.scheduleAtFixedRate(new CronTaskGenerator(), 0L,
+        TASK_TRIGGER_INTERVAL_MS / 2, TimeUnit.MILLISECONDS);
+    executingTaskTimeoutCheckThread.scheduleAtFixedRate(new TaskTimeOutCheck(), 0L,
+        TASK_TIMEOUT_CHECK_MS, TimeUnit.MILLISECONDS);
   }
 
   public synchronized TriggeredTaskInfo get2ExecutingTask() throws InterruptedException {
@@ -94,6 +104,7 @@ public class TaskQueueContext {
   }
 
   public synchronized boolean skipTask(TriggeredTaskInfo task) {
+    taskQueueSource.skipTaskMeter.mark();
     boolean success;
     success = executableTaskQueue.remove(task.getSysId());
     if (success) {
@@ -153,8 +164,8 @@ public class TaskQueueContext {
         return false;
       }
       TaskConf taskConf = jobConf.getTasks().get(0);
-      TriggeredTaskInfo task = generateTriggerTask(taskConf, jobId, jobConf.getWorkerGroup(),
-          new Date(), true, null);
+      TriggeredTaskInfo task =
+          generateTriggerTask(taskConf, jobId, jobConf.getWorkerGroup(), new Date(), true, null);
       executableTaskQueue.add(task);
       executableTaskCache.offerFirst(task);
       return true;
@@ -178,15 +189,10 @@ public class TaskQueueContext {
     }
   }
 
-  private TriggeredTaskInfo generateTriggerTask(
-      TaskConf taskConf,
-      String jobId,
-      String workerGroup,
-      Date triggerTime,
-      boolean manualTrigger,
-      String cronExpression) {
+  private TriggeredTaskInfo generateTriggerTask(TaskConf taskConf, String jobId, String workerGroup,
+      Date triggerTime, boolean manualTrigger, String cronExpression) {
     TriggeredTaskInfo task = new TriggeredTaskInfo(jobId, workerGroup, taskConf.getTaskId(),
-      taskConf.getTaskName(), taskConf.getParams(), IdUtil.getUniqId(), manualTrigger);
+        taskConf.getTaskName(), taskConf.getParams(), IdUtil.getUniqId(), manualTrigger);
     task.setTriggerTime(triggerTime);
     if (cronExpression != null) {
       Date nextTriggerTime = CronExpressionUtil.getNextTriggerTime(cronExpression, triggerTime);
@@ -200,17 +206,20 @@ public class TaskQueueContext {
    */
   class CronTaskGenerator implements Runnable {
 
-    @Override public void run() {
+    @Override
+    public void run() {
+      taskQueueSource.taskGenerateMeter.mark();
       ReentrantLock triggerLock = cronTaskQueue.triggerJobLock();
       try {
         if (triggerLock.tryLock(100, TimeUnit.MILLISECONDS)) {
           long now = System.currentTimeMillis();
-          List<JobConf> jobConfs = cronTaskQueue
-            .getNextTriggerJobs(now - TASK_TRIGGER_INTERVAL_MS * 10, now + TASK_TRIGGER_INTERVAL_MS);
+          List<JobConf> jobConfs = cronTaskQueue.getNextTriggerJobs(
+              now - TASK_TRIGGER_INTERVAL_MS * 10, now + TASK_TRIGGER_INTERVAL_MS);
           for (JobConf jobConf : jobConfs) {
             TaskConf taskConf = jobConf.getTasks().get(0);
             TriggeredTaskInfo task =
-              generateTriggerTask(taskConf, jobConf.getJobId(), jobConf.getWorkerGroup(), jobConf.getNextTriggerTime(), false, jobConf.getCronExpression());
+                generateTriggerTask(taskConf, jobConf.getJobId(), jobConf.getWorkerGroup(),
+                    jobConf.getNextTriggerTime(), false, jobConf.getCronExpression());
             // 将可执行任务持久化到队列中
             executableTaskQueue.add(task);
             // 将可执行任务缓存到内存中
@@ -219,7 +228,8 @@ public class TaskQueueContext {
             cronTaskQueue.triggeredJob(jobConf);
           }
         } else {
-          logger.warn("Cannot acquire trigger lock for waiting 100 ms, ignore this cronTaskGenerator");
+          logger.warn(
+              "Cannot acquire trigger lock for waiting 100 ms, ignore this cronTaskGenerator");
         }
       } catch (InterruptedException e) {
         logger.error(Throwables.getStackTraceAsString(e));
@@ -233,7 +243,9 @@ public class TaskQueueContext {
 
   class TaskTimeOutCheck implements Runnable {
 
-    @Override public void run() {
+    @Override
+    public void run() {
+      taskQueueSource.timeoutTaskCheckMeter.mark();
       List<TriggeredTaskInfo> tasks = (List<TriggeredTaskInfo>) executingTaskCache.values();
       if (tasks == null || tasks.isEmpty()) {
         return;
@@ -245,14 +257,18 @@ public class TaskQueueContext {
           continue;
         }
         long executingTimeMs = task.getExecutingTime().getTime() - now;
-        long nextTriggerTime = task.getNextTriggerTime() != null ? task.getNextTriggerTime().getTime() : Long.MAX_VALUE;
-        long maxExecutingTimeMs = Math.min(TASK_MAX_EXECUTING_TIME_MS, nextTriggerTime - task.getTriggerTime().getTime());
+        long nextTriggerTime = task.getNextTriggerTime() != null
+            ? task.getNextTriggerTime().getTime() : Long.MAX_VALUE;
+        long maxExecutingTimeMs =
+            Math.min(TASK_MAX_EXECUTING_TIME_MS, nextTriggerTime - task.getTriggerTime().getTime());
         if (maxExecutingTimeMs <= executingTimeMs) {
           executingTaskQueue.resume(task.getSysId());
           removeExecutingTask(task.getSysId(), task.getTaskId());
           executableTaskCache.add(task);
-          logger.warn("Task [sysId={}] has already run {} ms, greater than max run time {}, resume task to executable",
-            task.getSysId(), executingTimeMs, maxExecutingTimeMs);
+          taskQueueSource.timeoutTaskMeter.mark();
+          logger.warn(
+              "Task [sysId={}] has already run {} ms, greater than max run time {}, resume task to executable",
+              task.getSysId(), executingTimeMs, maxExecutingTimeMs);
         }
       }
     }

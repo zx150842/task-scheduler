@@ -21,7 +21,7 @@ public class TestMaster extends Master {
 
   public TestMaster(RpcEnv rpcEnv, RpcAddress address, DTSConf conf,
     TaskQueueContext taskQueueContext) {
-    super(rpcEnv, address, conf, taskQueueContext);
+    super(rpcEnv, address, conf);
   }
 
   @Override

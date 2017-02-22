@@ -1,5 +1,7 @@
 package com.dts.core.rpc.network;
 
+import com.dts.core.rpc.network.util.ConfigProvider;
+import com.dts.core.util.AddressUtil;
 import com.google.common.collect.Maps;
 
 import com.dts.core.rpc.network.util.MapConfigProvider;
@@ -16,11 +18,10 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.junit.Assert.*;
 
 /**
  * @author zhangxin
@@ -36,8 +37,8 @@ public class TransportClientFactoryTest {
     conf = new TransportConf("rpc", new SystemPropertyConfigProvider());
     RpcHandler rpcHandler = new NoOpRpcHandler();
     context = new TransportContext(conf, rpcHandler);
-    server1 = context.createServer(TestUtils.getLocalHost(), 8000);
-    server2 = context.createServer(TestUtils.getLocalHost(), 8001);
+    server1 = context.createServer(AddressUtil.getLocalHost(), 8000);
+    server2 = context.createServer(AddressUtil.getLocalHost(), 8001);
   }
 
   @After
@@ -68,8 +69,8 @@ public class TransportClientFactoryTest {
         @Override
         public void run() {
           try {
-            TransportClient client = factory.createClient(TestUtils.getLocalHost(), server1.getPort());
-            assert client.isActive();
+            TransportClient client = factory.createClient(AddressUtil.getLocalHost(), server1.getPort());
+            assertTrue(client.isActive());
             clients.add(client);
           } catch (IOException e) {
             failed.incrementAndGet();
@@ -87,7 +88,7 @@ public class TransportClientFactoryTest {
       attempts[i].join();
     }
 
-    assert failed.get() == 0;
+    assertEquals(0, failed.get());
 //    assert clients.size() == maxConnections;
     for (TransportClient client : clients) {
       client.close();
@@ -114,12 +115,69 @@ public class TransportClientFactoryTest {
   @Test
   public void returnDifferentClientsForDifferentServers() throws Exception {
     TransportClientFactory factory = context.createClientFactory();
-    TransportClient c1 = factory.createClient(TestUtils.getLocalHost(), server1.getPort());
-    TransportClient c2 = factory.createClient(TestUtils.getLocalHost(), server2.getPort());
+    TransportClient c1 = factory.createClient(AddressUtil.getLocalHost(), server1.getPort());
+    TransportClient c2 = factory.createClient(AddressUtil.getLocalHost(), server2.getPort());
 
-    assert c1.isActive();
-    assert c2.isActive();
-    assert c1 != c2;
+    assertTrue(c1.isActive());
+    assertTrue(c2.isActive());
+    assertTrue(c1 != c2);
     factory.close();
+  }
+
+  @Test
+  public void neverReturnInactiveClients() throws IOException, InterruptedException {
+    TransportClientFactory factory = context.createClientFactory();
+    TransportClient c1 = factory.createClient(AddressUtil.getLocalHost(), server1.getPort());
+    c1.close();
+    long start = System.currentTimeMillis();
+    while (c1.isActive() && (System.currentTimeMillis() - start) < 3000) {
+      Thread.sleep(10);
+    }
+    assertFalse(c1.isActive());
+    TransportClient c2 = factory.createClient(AddressUtil.getLocalHost(), server1.getPort());
+    assertFalse(c1 == c2);
+    assertTrue(c2.isActive());
+    factory.close();
+  }
+
+  @Test
+  public void closeBlockClientsWithFactory() throws IOException {
+    TransportClientFactory factory = context.createClientFactory();
+    TransportClient c1 = factory.createClient(AddressUtil.getLocalHost(), server1.getPort());
+    TransportClient c2 = factory.createClient(AddressUtil.getLocalHost(), server2.getPort());
+    assertTrue(c1.isActive());
+    assertTrue(c2.isActive());
+    factory.close();
+    assertFalse(c1.isActive());
+    assertFalse(c2.isActive());
+  }
+
+  @Test
+  public void closeIdleConnectionForRequestTimeout() throws IOException, InterruptedException {
+    TransportConf conf = new TransportConf("rpc", new ConfigProvider() {
+      @Override public String get(String name) {
+        if ("dts.rpc.io.connectionTimeout".equals(name)) {
+          return "1000";
+        }
+        String value = System.getProperty(name);
+        if (value == null) {
+          throw new NoSuchElementException(name);
+        }
+        return value;
+      }
+    });
+    TransportContext context = new TransportContext(conf, new NoOpRpcHandler(), true);
+    TransportClientFactory factory = context.createClientFactory();
+    try {
+      TransportClient c1 = factory.createClient(AddressUtil.getLocalHost(), server1.getPort());
+      assertTrue(c1.isActive());
+      long expiredTime = System.currentTimeMillis() + 10000;
+      while (c1.isActive() && System.currentTimeMillis() < expiredTime) {
+        Thread.sleep(10);
+      }
+      assertFalse(c1.isActive());
+    } finally {
+      factory.close();
+    }
   }
 }

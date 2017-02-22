@@ -1,5 +1,6 @@
 package com.dts.core.rpc.network;
 
+import com.dts.core.util.AddressUtil;
 import com.google.common.collect.Maps;
 
 import com.dts.core.rpc.network.util.MapConfigProvider;
@@ -70,7 +71,7 @@ public class RequestTimeoutIntegrationTest {
     TransportContext context = new TransportContext(conf, handler);
     server = context.createServer();
     clientFactory = context.createClientFactory();
-    TransportClient client = clientFactory.createClient(TestUtils.getLocalHost(), server.getPort());
+    TransportClient client = clientFactory.createClient(AddressUtil.getLocalHost(), server.getPort());
 
     TestCallback callback0 = new TestCallback();
     client.sendRpc(ByteBuffer.allocate(0), callback0);

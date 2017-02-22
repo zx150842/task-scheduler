@@ -14,6 +14,8 @@ subprojects {
         options.encoding = "UTF-8"
     }
 
+    compileJava.options.compilerArgs << '-parameters'
+
     ext {
         SLF4J_VERSION = '1.7.22'
         GUAVA_VERSION = '20.0'
@@ -28,5 +30,7 @@ subprojects {
         MYSQL_VERSION = "6.0.5"
         SPRING_BOOT_VERSION = '1.4.4.RELEASE'
         MYBATIS_SPRING_BOOT_STARTER = '1.2.0'
+        METRICS_VERSION = '3.1.2'
+        METRICS_INFLUXDB_VERSION = '0.9.3'
     }
 }

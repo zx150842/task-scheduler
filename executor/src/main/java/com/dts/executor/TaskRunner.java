@@ -1,5 +1,9 @@
 package com.dts.executor;
 
+import com.codahale.metrics.MetricRegistry;
+import com.codahale.metrics.Timer;
+import com.dts.core.DTSConf;
+import com.dts.core.metrics.MetricsSystem;
 import com.google.common.base.Throwables;
 
 import com.dts.core.DeployMessages;
@@ -22,12 +26,15 @@ public class TaskRunner implements Runnable {
   public final TaskWrapper tw;
   public final Method method;
   public final Object instance;
+  private final TaskRunnerSource taskRunnerSource;
 
-  public TaskRunner(Worker worker, TaskWrapper tw, Method method, Object instance) {
+  public TaskRunner(Worker worker, DTSConf conf, TaskWrapper tw, Method method, Object instance) {
     this.worker = worker;
     this.tw = tw;
     this.method = method;
     this.instance = instance;
+    this.taskRunnerSource = new TaskRunnerSource();
+    MetricsSystem.createMetricsSystem(conf).registerSource(taskRunnerSource);
   }
 
   @Override public void run() {
@@ -36,15 +43,21 @@ public class TaskRunner implements Runnable {
     if (params != null && !params.isEmpty()) {
       args = params.toArray(new Object[] {});
     }
+    Timer.Context context = null;
     try {
       String threadName = Thread.currentThread().getName();
       logger.info("Begin to run task {}, threadName: {}", tw.task, threadName);
+      context = taskRunnerSource.taskExecuteTimer.time();
       method.invoke(instance, args);
-      worker.addToReportQueue(new FinishTask(tw.task, "success"));
+      worker.addToReportQueue(new TaskResult(new FinishTask(tw.task, "success"), tw.timerContext));
       logger.info("Finish run task {}, threadName: {}", tw.task, threadName);
     } catch (Throwable e) {
-      worker.addToReportQueue(new FinishTask(tw.task, Throwables.getStackTraceAsString(e)));
+      worker.addToReportQueue(new TaskResult(new FinishTask(tw.task, Throwables.getStackTraceAsString(e)), tw.timerContext));
       logger.error("Invoke method {} of task {} failed", method, tw.task, e);
+    } finally {
+      if (context != null) {
+        context.stop();
+      }
     }
   }
 }

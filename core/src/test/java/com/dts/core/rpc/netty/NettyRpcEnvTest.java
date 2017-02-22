@@ -1,5 +1,6 @@
 package com.dts.core.rpc.netty;
 
+import com.dts.core.util.AddressUtil;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Queues;
 
@@ -12,7 +13,6 @@ import com.dts.core.rpc.RpcEndpointAddress;
 import com.dts.core.rpc.RpcEndpointRef;
 import com.dts.core.rpc.RpcEnv;
 import com.dts.core.exception.DTSException;
-import com.dts.core.rpc.network.TestUtils;
 import com.dts.core.util.Tuple2;
 
 import org.junit.After;
@@ -57,7 +57,7 @@ public class NettyRpcEnvTest {
   }
 
   protected RpcEnv createRpcEnv(DTSConf conf, String name, int port, boolean clientMode) {
-    return RpcEnv.create(name, TestUtils.getLocalHost(), port, conf, clientMode);
+    return RpcEnv.create(name, AddressUtil.getLocalHost(), port, conf, clientMode);
   }
 
   @Test
