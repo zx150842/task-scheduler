@@ -1,36 +1,49 @@
 subprojects {
-    group 'com.dts'
-    version '1.0-SNAPSHOT'
+    group 'com.dts.scheduler'
+    version '1.0.0'
 
     apply plugin: 'java'
+    apply plugin: 'idea'
+    apply plugin: 'maven'
+    apply plugin: 'maven-publish'
 
     sourceCompatibility = 1.8
 
-    repositories {
-        jcenter()
-    }
-
-    tasks.withType(JavaCompile) {
-        options.encoding = "UTF-8"
-    }
+    compileJava.options.encoding = 'UTF-8'
+    compileTestJava.options.encoding = 'UTF-8'
 
     compileJava.options.compilerArgs << '-parameters'
 
     ext {
-        SLF4J_VERSION = '1.7.22'
-        GUAVA_VERSION = '20.0'
-        COMMONS_LANG_VERSION = '3.5'
-        JSR305_VERSION = '3.0.1'
-        CURATOR_VERSION = '2.11.1'
-        SPRING_VERSION = '4.3.4.RELEASE'
-        MOCKITO_VERSION = '2.5.5'
-        NETTY_VERSION = '4.1.6.Final'
-        MYBATIS_VERSION = '3.4.2'
-        GSON_VERSION = "2.8.0"
-        MYSQL_VERSION = "6.0.5"
-        SPRING_BOOT_VERSION = '1.4.4.RELEASE'
-        MYBATIS_SPRING_BOOT_STARTER = '1.2.0'
-        METRICS_VERSION = '3.1.2'
-        METRICS_INFLUXDB_VERSION = '0.9.3'
+        // project的额外属性，这里用于定义profile属性，模拟maven的profile
+        if (project.hasProperty('profile')) {
+            profile = project['profile']
+        } else {
+            profile = "develop"
+        }
+
+        slf4jVersion = '1.7.22'
+        guavaVersion = '20.0'
+        commonsLangVersion = '3.5'
+        jsr305Version = '3.0.1'
+        curatorVersion = '2.11.1'
+        springVersion = '4.3.4.RELEASE'
+        mockitoVersion = '2.5.5'
+        nettyVersion = '4.1.6.Final'
+        mybatisVersion = '3.4.2'
+        gsonVersion = "2.8.0"
+        mysqlVersion = "6.0.5"
+        springBootVersion = '1.5.1.RELEASE'
+        mybatisSpringBootStarterVersion = '1.2.0'
+        metricsVersion = '3.1.2'
+        metricsInfluxdbVersion = '0.9.3'
+    }
+
+    configurations.all {
+        resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+    }
+
+    repositories {
+        jcenter()
     }
 }

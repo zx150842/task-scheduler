@@ -1,5 +1,7 @@
 package com.dts.admin.common.dto;
 
+import com.dts.core.rpc.RpcEndpointRef;
+
 /**
  * @author zhangxin
  */
@@ -7,11 +9,13 @@ public class MasterNodeDto {
   private String host;
   private int port;
   private boolean isLeader;
+  private RpcEndpointRef masterRef;
 
-  public MasterNodeDto(String host, int port, boolean isLeader) {
+  public MasterNodeDto(String host, int port, boolean isLeader, RpcEndpointRef masterRef) {
     this.host = host;
     this.port = port;
     this.isLeader = isLeader;
+    this.masterRef = masterRef;
   }
 
   public String getHost() {
@@ -36,5 +40,13 @@ public class MasterNodeDto {
 
   public void setLeader(boolean leader) {
     isLeader = leader;
+  }
+
+  public RpcEndpointRef getMasterRef() {
+    return masterRef;
+  }
+
+  public void setMasterRef(RpcEndpointRef masterRef) {
+    this.masterRef = masterRef;
   }
 }

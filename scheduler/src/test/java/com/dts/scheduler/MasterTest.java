@@ -29,12 +29,20 @@ public class MasterTest {
 
   @Test
   public void testElectedLeader() throws InterruptedException {
-    TimeUnit.SECONDS.sleep(360);
+    TimeUnit.SECONDS.sleep(360000);
   }
 
   @Test
   public void testSendTask() {
     _master.schedule();
   }
+
+  @Test
+  public void test() {
+    boolean runOnSeed = false;
+    boolean isSeed = false;
+    System.out.println(!(isSeed ^ runOnSeed));
+  }
+
 
 }

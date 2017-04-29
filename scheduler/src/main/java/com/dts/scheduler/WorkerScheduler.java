@@ -24,15 +24,20 @@ public class WorkerScheduler {
     this.master = master;
   }
 
-  public WorkerInfo getLaunchTaskWorker(String workerGroup) {
+  public WorkerInfo getLaunchTaskWorker(String workerGroup, boolean runOnSeed) {
+    List<WorkerInfo> workers;
     if (master.workerGroups() == null || master.workerGroups().isEmpty()) {
+      logger.error("There is no online workers in {}", workerGroup);
+      return null;
+    }
+    workers = master.workerGroups().get(workerGroup);
+    if (workers == null || workers.isEmpty()) {
       logger.error("There is no workers in {}", workerGroup);
       return null;
     }
-    List<WorkerInfo> workers = master.workerGroups().get(workerGroup);
     List<WorkerInfo> aliveWorkers = Lists.newArrayList();
     for (WorkerInfo worker : workers) {
-      if (worker.isAlive()) {
+      if (worker.isAlive() && !(worker.isSeed ^ runOnSeed)) {
         aliveWorkers.add(worker);
       }
     }

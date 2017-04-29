@@ -1,6 +1,7 @@
 package com.dts.scheduler;
 
 import com.dts.core.metrics.MetricsSystem;
+import com.dts.core.registration.*;
 import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
@@ -8,10 +9,6 @@ import com.google.common.collect.Maps;
 import com.dts.core.EndpointNames;
 import com.dts.core.DTSConf;
 import com.dts.core.TriggeredTaskInfo;
-import com.dts.core.registration.RegisterClient;
-import com.dts.core.registration.RegisterServiceName;
-import com.dts.core.registration.RpcRegisterMessage;
-import com.dts.core.registration.ZKNodeChangeListener;
 import com.dts.core.util.AddressUtil;
 import com.dts.core.util.ThreadUtil;
 import com.dts.core.rpc.RpcAddress;
@@ -29,6 +26,7 @@ import org.apache.curator.x.discovery.ServiceInstance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -56,8 +54,11 @@ public class Master extends RpcEndpoint {
   private Map<RpcAddress, WorkerInfo> _addressToWorker = Maps.newHashMap();
   private final ReentrantLock workerLock = new ReentrantLock();
 
+  private Map<String, RpcRegisterMessage> _idToWorkerDetails = Maps.newHashMap();
+
   private final long SYNC_WORKER_SEC;
   private final long WORKER_TIMEOUT_MS;
+  private final int TASK_MAX_RETRY;
 
   public static final String SYSTEM_NAME = "dtsMaster";
 
@@ -78,7 +79,8 @@ public class Master extends RpcEndpoint {
     this.address = address;
     this.conf = conf;
     this.SYNC_WORKER_SEC = conf.getLong("dts.master.syncWorkerSec", 60);
-    this.WORKER_TIMEOUT_MS = conf.getLong("dts.worker.timeoutMs", 60) * 1000;
+    this.WORKER_TIMEOUT_MS = conf.getLong("dts.worker.timeoutMs", 1000);
+    this.TASK_MAX_RETRY = conf.getInt("dts.task.maxRetries", 3);
     this.metricsSystem = MetricsSystem.createMetricsSystem(conf);
     this.masterSource = new MasterSource(this);
     this.taskQueueContext = new TaskQueueContext(conf);
@@ -142,6 +144,25 @@ public class Master extends RpcEndpoint {
     metricsSystem.stop();
   }
 
+  public void resetToStandby() {
+    if (state != RecoveryState.STANDBY) {
+      state = RecoveryState.STANDBY;
+    }
+    if (syncWorkerTask != null) {
+      syncWorkerTask.cancel(true);
+    }
+    if (syncZKWorkerThread != null) {
+      syncZKWorkerThread.shutdownNow();
+    }
+    if (sendTaskToWorkThread != null) {
+      sendTaskToWorkThread.shutdownNow();
+    }
+
+    taskQueueContext.stop();
+
+    logger.info("Stop leader complete!");
+  }
+
   public void electedLeader() {
     self().send(new ElectedLeader());
   }
@@ -157,9 +178,8 @@ public class Master extends RpcEndpoint {
     }
 
     else if (o instanceof RevokedLeadership) {
-      // TODO not exit, only stop
-      logger.error("Leadership has been revoked -- master shutting down.");
-      System.exit(0);
+      logger.error("Leadership has been revoked -- master stop.");
+      resetToStandby();
     }
 
     else if (o instanceof SyncZKWorkers) {
@@ -175,16 +195,11 @@ public class Master extends RpcEndpoint {
         masterSource.failTaskMeter.mark();
       }
     }
-
-    else if (o instanceof ManualTriggerJob) {
-      ManualTriggerJob msg = (ManualTriggerJob)o;
-      taskQueueContext.manualTriggerJob(msg.jobConf);
-    }
   }
 
   @Override
-  public void receiveAndReply(Object content, RpcCallContext context) {
-    if (content instanceof AskMaster) {
+  public void receiveAndReply(Object o, RpcCallContext context) {
+    if (o instanceof AskLeader) {
       if (state == RecoveryState.ALIVE) {
         context.reply(true);
       } else {
@@ -192,9 +207,9 @@ public class Master extends RpcEndpoint {
       }
     }
 
-    else if (content instanceof KillRunningTask) {
-      KillRunningTask msg = (KillRunningTask)content;
-      WorkerInfo worker = workerScheduler.getLaunchTaskWorker(msg.task.getWorkerGroup());
+    else if (o instanceof KillRunningTask) {
+      KillRunningTask msg = (KillRunningTask)o;
+      WorkerInfo worker = workerScheduler.getLaunchTaskWorker(msg.task.getWorkerGroup(), false);
       if (worker != null) {
         Future future = worker.endpoint.ask(new KillRunningTask(msg.task));
         try {
@@ -210,8 +225,33 @@ public class Master extends RpcEndpoint {
       }
     }
 
+    else if (o instanceof AskWorkers) {
+      context.reply(new ReplyWorkers(Lists.newArrayList(_idToWorkerDetails.values())));
+    }
+
+    else if (o instanceof RefreshJobs) {
+      boolean success = taskQueueContext.refreshJobs();
+      int code = success ? SUCCESS : FAIL;
+      String message = success ? "success" : "fail";
+      context.reply(new RefreshedJobs(code, message));
+    }
+
+    else if (o instanceof RefreshWorkers) {
+      reregisterWorkers();
+      context.reply(new ReplyWorkers(Lists.newArrayList(_idToWorkerDetails.values())));
+    }
+
+    else if (o instanceof ManualTriggerJob) {
+      logger.info("get manual job from client {}", o);
+      ManualTriggerJob msg = (ManualTriggerJob)o;
+      TriggeredTaskInfo task = taskQueueContext.manualTriggerJob(msg.jobConf, msg.runOnSeed);
+      String sysId = task != null ? task.getSysId() : null;
+      context.reply(new ManualTriggeredJob(sysId));
+      logger.info("send manual job sysid to client {}", sysId);
+    }
+
     else {
-      context.sendFailure(new DTSException("Master not support receive msg type: " + content.getClass().getCanonicalName()));
+      context.sendFailure(new DTSException("Master not support receive msg type: " + o.getClass().getCanonicalName()));
     }
   }
 
@@ -230,18 +270,25 @@ public class Master extends RpcEndpoint {
       try {
         TriggeredTaskInfo task = taskQueueContext.get2ExecutingTask();
         if (task != null) {
-          logger.info("To send to worker task: {}", task);
-          WorkerInfo worker = workerScheduler.getLaunchTaskWorker(task.getWorkerGroup());
+          logger.trace("To send to worker task: {}", task);
+          WorkerInfo worker = workerScheduler.getLaunchTaskWorker(task.getWorkerGroup(), task.isRunOnSeed());
           if (worker != null) {
-            logger.info("Select worker {} to execute task {}", worker.id, task);
+            logger.trace("Select worker {} to execute task {}", worker.id, task);
             task.setWorkerId(worker.id);
             taskQueueContext.executingTask(task);
             worker.endpoint.send(new LaunchTask(task));
             masterSource.sendTaskMeter.mark();
           } else {
             logger.info("No worker is valid, resume task {}", task);
-            taskQueueContext.resumeTask(task);
-            masterSource.resumeTaskMeter.mark();
+            task.incrRetryCount();
+            if (task.getRetryCount() > TASK_MAX_RETRY) {
+              logger.error("Task {} has retry {} times, discard task", task, task.getRetryCount());
+              taskQueueContext.removeOverRetryTask(task);
+              masterSource.discardRetryTaskMeter.mark();
+            } else {
+              taskQueueContext.resumeExecutableTask(task);
+              masterSource.resumeTaskMeter.mark();
+            }
           }
         }
       } catch (InterruptedException e) {
@@ -258,18 +305,20 @@ public class Master extends RpcEndpoint {
         Map<String, List<WorkerInfo>> workerGroups = Maps.newHashMap();
         Map<String, WorkerInfo> idToWorker = Maps.newHashMap();
         Map<RpcAddress, WorkerInfo> addressToWorker = Maps.newHashMap();
+        Map<String, RpcRegisterMessage> idToWorkerDetails = Maps.newHashMap();
         if (messages == null || messages.isEmpty()) {
           logger.warn("Service name {} has no valid node", RegisterServiceName.WORKER);
           _workerGroups = workerGroups;
           _idToWorker = idToWorker;
           _addressToWorker = addressToWorker;
+          _idToWorkerDetails = idToWorkerDetails;
           return false;
         }
         for (RpcRegisterMessage message : messages) {
           String workerId = message.detail.getWorkerId();
           RpcEndpointRef workerRef = new NettyRpcEndpointRef(conf, new RpcEndpointAddress(message.address, EndpointNames.WORKER_ENDPOINT),
               (NettyRpcEnv) rpcEnv);
-          WorkerInfo workerInfo = new WorkerInfo(workerId, message.detail.getWorkerGroup(), workerRef);
+          WorkerInfo workerInfo = new WorkerInfo(workerId, message.detail.getWorkerGroup(), message.detail.isSeed(), workerRef);
           idToWorker.put(workerId, workerInfo);
           addressToWorker.put(message.address, workerInfo);
           if (workerGroups.containsKey(workerInfo.groupId)) {
@@ -278,15 +327,38 @@ public class Master extends RpcEndpoint {
             List<WorkerInfo> workerInfos = Lists.newArrayList(workerInfo);
             workerGroups.put(workerInfo.groupId, workerInfos);
           }
+          idToWorkerDetails.put(message.detail.getWorkerId(), message);
         }
         _workerGroups = workerGroups;
         _idToWorker = idToWorker;
         _addressToWorker = addressToWorker;
+        _idToWorkerDetails = idToWorkerDetails;
       }
       return true;
     } finally {
+      resumeExecutingTaskToValidWork();
       if (workerLock.isHeldByCurrentThread()) {
         workerLock.unlock();
+      }
+    }
+  }
+
+  /**
+   * 每次刷新worker后都检查一次正在运行的task所在的worker是否已经被移除，如果worker已经不存在，则
+   * 将被调度到这个worker运行的task重新调度到其他worker执行
+   */
+  private void resumeExecutingTaskToValidWork() {
+    Collection<TriggeredTaskInfo> executingTasks = taskQueueContext.executingTaskCache.values();
+    for (TriggeredTaskInfo task : executingTasks) {
+      String workerId = task.getWorkerId();
+      String sysId = task.getSysId();
+      String lastSysId = taskQueueContext.lastExecuteTaskSysIdCache.get(task.getTaskId());
+      if (_idToWorker == null || !_idToWorker.containsKey(workerId)) {
+        if (lastSysId != null && lastSysId.compareTo(sysId) <= 0) {
+          logger.warn("Worker {} is invalid, resume this worker executing task {} to other worker",
+            workerId, task);
+          taskQueueContext.resumeExecutingTask(task);
+        }
       }
     }
   }

@@ -1,20 +1,46 @@
 dependencies {
-    compile group: 'org.apache.curator', name: 'curator-recipes', version: "$CURATOR_VERSION"
-    compile group: 'org.apache.curator', name: 'curator-test', version: "$CURATOR_VERSION"
-    compile group: 'org.apache.curator', name: 'curator-x-discovery', version: "$CURATOR_VERSION"
+    compile group: 'org.apache.curator', name: 'curator-recipes', version: "$curatorVersion"
+    compile group: 'org.apache.curator', name: 'curator-test', version: "$curatorVersion"
+    compile group: 'org.apache.curator', name: 'curator-x-discovery', version: "$curatorVersion"
 
-    compile group: 'io.netty', name: 'netty-all', version: "$NETTY_VERSION"
-    compile group: 'org.slf4j', name: 'slf4j-log4j12', version: "$SLF4J_VERSION"
+    compile group: 'io.netty', name: 'netty-all', version: "$nettyVersion"
+    compile group: 'org.slf4j', name: 'slf4j-log4j12', version: "$slf4jVersion"
 
-    compile group: 'com.google.guava', name: 'guava', version: "$GUAVA_VERSION"
-    compile group: 'org.apache.commons', name: 'commons-lang3', version: "$COMMONS_LANG_VERSION"
-    compile group: 'com.google.code.findbugs', name: 'jsr305', version: "$JSR305_VERSION"
-    compile group: 'com.google.code.gson', name: 'gson', version: "$GSON_VERSION"
-    compile group: 'io.dropwizard.metrics', name: 'metrics-core', version: "$METRICS_VERSION"
-    compile group: 'io.dropwizard.metrics', name: 'metrics-jvm', version: "$METRICS_VERSION"
-    compile group: 'io.dropwizard.metrics', name: 'metrics-graphite', version: "$METRICS_VERSION"
-    compile group: 'com.github.davidb', name: 'metrics-influxdb', version: "$METRICS_INFLUXDB_VERSION"
+    compile group: 'com.google.guava', name: 'guava', version: "$guavaVersion"
+    compile group: 'org.apache.commons', name: 'commons-lang3', version: "$commonsLangVersion"
+    compile group: 'com.google.code.findbugs', name: 'jsr305', version: "$jsr305Version"
+    compile group: 'com.google.code.gson', name: 'gson', version: "$gsonVersion"
+    compile group: 'io.dropwizard.metrics', name: 'metrics-core', version: "$metricsVersion"
+    compile group: 'io.dropwizard.metrics', name: 'metrics-jvm', version: "$metricsVersion"
+    compile group: 'io.dropwizard.metrics', name: 'metrics-graphite', version: "$metricsVersion"
+    compile group: 'com.github.davidb', name: 'metrics-influxdb', version: "$metricsInfluxdbVersion"
 
     testCompile group: 'junit', name: 'junit', version: '4+'
-    testCompile group: 'org.mockito', name: 'mockito-core', version: "$MOCKITO_VERSION"
+    testCompile group: 'org.mockito', name: 'mockito-core', version: "$mockitoVersion"
+}
+
+jar {
+    if(profile.equals("develop")){
+        version += "-SNAPSHOT"
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            groupId 'com.dts.scheduler'
+            artifactId 'core'
+            if(profile.equals("develop")){
+                version += "-SNAPSHOT"
+            }
+            from components.java
+            artifact sourceJar {
+                classifier "sources"
+            }
+        }
+    }
+}
+
+task sourceJar(type: Jar) {
+    from sourceSets.main.allJava
 }

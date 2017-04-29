@@ -7,6 +7,7 @@ import com.dts.core.metrics.sink.Sink;
 import com.dts.core.metrics.source.JvmSource;
 import com.dts.core.metrics.source.Source;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +36,11 @@ public class MetricsSystem {
 
   private void init() {
     registerSource(new JvmSource());
-    registerSink(new InfluxDBSink(conf, registry));
+    try {
+      registerSink(new InfluxDBSink(conf, registry));
+    } catch (Exception e) {
+      logger.error("Not start metric sink, {}", Throwables.getStackTraceAsString(e));
+    }
   }
 
   public static MetricsSystem createMetricsSystem(DTSConf conf) {

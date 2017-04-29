@@ -2,9 +2,11 @@ package com.dts.admin.controller;
 
 import com.dts.admin.common.constant.Constant;
 import com.dts.admin.common.dto.JobDto;
+import com.dts.admin.common.vo.TaskLog;
 import com.dts.admin.service.CronJobService;
 import com.dts.core.util.Tuple2;
 
+import com.google.common.base.Throwables;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.ModelMap;
@@ -98,8 +100,25 @@ public class JobController {
 
   @RequestMapping("/trigger")
   @ResponseBody
-  public String manualTrigger(String jobId) {
-    String result = cronJobService.manualTrigger(jobId) ? SUCCESS : FAIL;
+  public String manualTrigger(String jobId, boolean runOnSeed) {
+    return cronJobService.manualTrigger(jobId, runOnSeed);
+  }
+
+  @RequestMapping("/trigger/log")
+  @ResponseBody
+  public TaskLog manualTriggerLog(String sysId) {
+    return cronJobService.getTaskLog(sysId);
+  }
+
+  @RequestMapping("/refresh")
+  @ResponseBody
+  public String refreshJobs() {
+    String result;
+    try {
+      result = cronJobService.refreshJobs() ? Constant.SUCCESS : Constant.FAIL;
+    } catch (Exception e) {
+      result = Throwables.getStackTraceAsString(e);
+    }
     return result;
   }
 

@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html>
-<#include "common/header.ftl">
+<#include "../common/header.ftl">
 <body class="hold-transition skin-blue sidebar-mini">
 <div class="wrapper">
 
-<#include "common/sidebar.ftl">
+<#include "../common/sidebar.ftl">
 
     <!-- Content Wrapper. Contains page content -->
     <div class="content-wrapper">
@@ -21,8 +21,9 @@
                 <div class="col-xs-12">
 
                     <div class="box">
-                        <div class="box-header">
-                            <h3 class="box-title">执行节点列表</h3>
+                        <div class="box-header row">
+                            <div class="col-md-10"><h3 class="box-title">online节点列表</h3></div>
+                            <div class="col-md-2"><button type="button" class="btn btn-sm btn-danger" onclick="refreshWorker()">刷新节点</button></div>
                         </div>
                         <!-- /.box-header -->
                         <div class="box-body">
@@ -62,11 +63,37 @@
     <div class="control-sidebar-bg"></div>
 </div>
 
-<#include "common/page.ftl">
+<#include "../common/page.ftl">
 <script>
     window.onload = function() {
         $("#sideMenu li").removeClass("active");
+        $("#executorMenu li").removeClass("active");
         $("#executorMenu").addClass("active");
+        $("#onlineExecutorMenu").addClass("active");
+    }
+
+    function refreshWorker() {
+        $.ajax({
+            url:'/executor/refresh',
+            type:'POST',
+            dataType:'json',
+            data:{},
+            success:function(data){
+                if (typeof(data) != 'undefined' && data == '0') {
+                    alert("刷新成功")
+                    window.location.reload()
+                } else {
+                    if (data == '-1') {
+                        alert("刷新失败")
+                    } else {
+                        alert(data);
+                    }
+                }
+            },
+            error:function(data){
+                alert(data)
+            }
+        })
     }
 </script>
 </body>

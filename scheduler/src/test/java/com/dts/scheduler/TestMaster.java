@@ -26,24 +26,8 @@ public class TestMaster extends Master {
 
   @Override
   public void receive(Object o, RpcAddress senderAddress) {
-    if (o instanceof Heartbeat) {
-      messages.add(o);
-      masterLatch.countDown();
-    }
 
-    else if (o instanceof WorkerLastestState) {
-      messages.add(o);
-    }
-
-    else if (o instanceof LaunchedTask) {
-      messages.add(o);
-    }
-
-    else if (o instanceof ExecutingTask) {
-      messages.add(o);
-    }
-
-    else if (o instanceof FinishTask) {
+    if (o instanceof FinishTask) {
       messages.add(o);
     }
 

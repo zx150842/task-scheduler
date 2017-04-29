@@ -1,5 +1,6 @@
 package com.dts.scheduler;
 
+import com.codahale.metrics.Counter;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
@@ -17,6 +18,7 @@ public class MasterSource implements Source {
   public final Meter resumeTaskMeter;
   public final Meter syncWorkerMeter;
   public final Meter sendTaskMeter;
+  public final Meter discardRetryTaskMeter;
 
   public MasterSource(Master master) {
     this.successTaskMeter = metricRegistry.meter(MetricRegistry.name("task", "successes"));
@@ -24,6 +26,7 @@ public class MasterSource implements Source {
     this.resumeTaskMeter = metricRegistry.meter(MetricRegistry.name("task", "resumes"));
     this.syncWorkerMeter = metricRegistry.meter(MetricRegistry.name("backend", "workerSync"));
     this.sendTaskMeter = metricRegistry.meter(MetricRegistry.name("task", "sends"));
+    this.discardRetryTaskMeter = metricRegistry.meter(MetricRegistry.name("task", "discardRetrys"));
 
     metricRegistry.register("state",
       (Gauge<Integer>)() -> master.state == RecoveryState.ALIVE ? 1 : 0);

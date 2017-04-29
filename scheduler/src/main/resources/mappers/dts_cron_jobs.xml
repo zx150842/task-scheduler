@@ -55,4 +55,10 @@
         set last_trigger_time = #{lastTriggerTime}
         where job_id = #{jobId}
     </update>
+
+    <select id="getByJobId" resultMap="baseMap">
+        select <include refid="columnAll"/>
+        from <include refid="tableName"/>
+        where job_id = #{jobId}
+    </select>
 </mapper>

@@ -24,4 +24,6 @@ public interface CronTaskQueue {
   void triggeredJob(JobConf jobConf);
 
   ReentrantLock triggerJobLock();
+
+  boolean refreshJobs();
 }

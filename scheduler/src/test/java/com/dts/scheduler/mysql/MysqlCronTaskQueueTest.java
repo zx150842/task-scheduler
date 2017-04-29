@@ -32,6 +32,11 @@ public class MysqlCronTaskQueueTest {
   @Before
   public void setup() {
     DTSConf conf = new DTSConf(false);
+    conf.set("dts.metric.sink.influxdb.host","10.134.106.233");
+    conf.set("dts.metric.sink.influxdb.port", "8086");
+    conf.set("dts.metric.sink.influxdb.user", "odin");
+    conf.set("dts.metric.sink.influxdb.password", "helloworld");
+    conf.set("dts.metric.sink.influxdb.database", "scheduler_monitor");
     mysqlCronTaskQueue = new MysqlCronTaskQueue(conf);
 
     LinkedHashMap<String, String> map = Maps.newLinkedHashMap();
@@ -71,5 +76,12 @@ public class MysqlCronTaskQueueTest {
     } finally {
       MybatisUtil.closeSqlSession(sqlSession);
     }
+  }
+
+  @Test
+  public void testGetJob() {
+    String jobId = "job-1486020841163";
+    JobConf jobConf = mysqlCronTaskQueue.getJob(jobId);
+    System.out.println(jobConf);
   }
 }

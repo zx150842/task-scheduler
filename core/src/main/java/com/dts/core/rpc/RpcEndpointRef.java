@@ -24,7 +24,7 @@ public abstract class RpcEndpointRef {
   public RpcEndpointRef(DTSConf conf) {
     this.maxRetries = conf.getInt("dts.rpc.numRetries", 3);
     this.retryWaitMs = conf.getLong("dts.rpc.retry.waitTimeMs", 3000);
-    this.defaultAskTimeoutMs = conf.getLong("dts.rpc.askTimeoutMs", 120 * 1000);
+    this.defaultAskTimeoutMs = conf.getLong("dts.rpc.askTimeoutMs", 5 * 1000);
   }
 
   public abstract RpcAddress address();

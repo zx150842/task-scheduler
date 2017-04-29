@@ -1,13 +1,10 @@
 package com.dts.executor;
 
-import com.codahale.metrics.Timer;
 import com.dts.core.metrics.MetricsSystem;
 import com.google.common.collect.Queues;
 
-import com.dts.core.TriggeredTaskInfo;
 import com.dts.core.util.ThreadUtil;
 import com.dts.core.DTSConf;
-import com.dts.core.rpc.RpcEndpointRef;
 import com.dts.executor.task.TaskMethodWrapper;
 
 import org.slf4j.Logger;
@@ -40,7 +37,7 @@ public class TaskDispatcher {
     this.taskMethodWrapper = taskMethodWrapper;
     this.dispatchThread = ThreadUtil.newDaemonSingleThreadExecutor("worker-dispatcher");
     this.dispatchThread.submit(new TaskLoop());
-    int threadNum = conf.getInt("dts.worker.threadPool.threadCount", 10);
+    int threadNum = worker.THREAD_NUM;
     this.threadPool = ThreadUtil.newDaemonFixedThreadPool(threadNum, "worker-task-threadpool");
     this.taskDispatcherSource = new TaskDispatcherSource(this);
     MetricsSystem.createMetricsSystem(conf).registerSource(taskDispatcherSource);

@@ -1,18 +1,39 @@
 dependencies {
-    compile project(":core")
-    compile group: 'org.springframework', name: 'spring-core', version: "$SPRING_VERSION"
-    compile group: 'org.springframework', name: 'spring-context', version: "$SPRING_VERSION"
-    compile group: 'org.springframework', name: 'spring-aspects', version: "$SPRING_VERSION"
+    if (profile.equals("develop")) {
+        compile(project(":core"))
+    } else {
+        compile("com.sogou.scheduler:core:$version") {exclude group: "org.slf4j"}
+    }
+    compile group: 'org.springframework', name: 'spring-core', version: "$springVersion"
+    compile group: 'org.springframework', name: 'spring-context', version: "$springVersion"
+    compile group: 'org.springframework', name: 'spring-aspects', version: "$springVersion"
 
     testCompile group: 'junit', name: 'junit', version: '4+'
-    testCompile group: 'org.springframework', name: 'spring-test', version:"$SPRING_VERSION"
+    testCompile group: 'org.springframework', name: 'spring-test', version:"$springVersion"
 }
 
-task fatJar(type: Jar) {
-    from {
-        configurations.runtime.collect {
-            it.isDirectory() ? it : zipTree(it)
+jar {
+    if(profile.equals("develop")){
+        version += "-SNAPSHOT"
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            groupId 'com.dts.scheduler'
+            artifactId 'executor'
+            if(profile.equals("develop")){
+                version += "-SNAPSHOT"
+            }
+            from components.java
+            artifact sourceJar {
+                classifier "sources"
+            }
         }
     }
-    with jar
+}
+
+task sourceJar(type: Jar) {
+    from sourceSets.main.allJava
 }

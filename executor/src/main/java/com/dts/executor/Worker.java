@@ -1,9 +1,8 @@
 package com.dts.executor;
 
-import com.codahale.metrics.Meter;
-import com.codahale.metrics.Timer;
 import com.dts.core.metrics.MetricsSystem;
 import com.dts.core.registration.*;
+
 import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Queues;
@@ -49,11 +48,11 @@ public class Worker extends RpcEndpoint {
 
   private final DTSConf conf;
 
-  private final String WORKER_ID;
-  private final String WORKER_GROUP_ID;
-  private final int THREAD_NUM;
-  private final int SYNC_MASTER_SEC;
-  private final int MASTER_TIMEOUT_MS;
+  public final String WORKER_ID;
+  public final String WORKER_GROUP_ID;
+  public final int THREAD_NUM;
+  public final int SYNC_MASTER_SEC;
+  public final int MASTER_TIMEOUT_MS;
 
   private final TaskMethodWrapper tw;
 
@@ -69,7 +68,7 @@ public class Worker extends RpcEndpoint {
   public final RpcEndpointRef UNKNOWN_MASTER;
   private static final ReentrantLock masterLock = new ReentrantLock();
   private RegisterClient registerClient;
-  private ServiceInstance<WorkerNodeDetail> instance;
+  private ServiceInstance<NodeDetail> instance;
 
   private final LinkedBlockingQueue<TaskResult> reportMessageQueue = Queues.newLinkedBlockingQueue();
   private final ScheduledExecutorService syncMasterThread;
@@ -77,6 +76,8 @@ public class Worker extends RpcEndpoint {
 
   private final MetricsSystem metricsSystem;
   public final WorkerSource workerSource;
+
+  private final boolean isSeed;
 
   public Worker(RpcEnv rpcEnv, TaskMethodWrapper tw, DTSConf conf) {
     super(rpcEnv);
@@ -88,16 +89,18 @@ public class Worker extends RpcEndpoint {
     this.tw = tw;
 
     this.WORKER_GROUP_ID = conf.get("dts.worker.groupId");
-    this.THREAD_NUM = conf.getInt("dts.worker.threadNum", 10);
+    this.THREAD_NUM = conf.getInt("dts.worker.threads", 10);
     this.WORKER_ID = AddressUtil.getLocalHost() + "-" + WORKER_GROUP_ID;
     this.SYNC_MASTER_SEC = conf.getInt("dts.worker.syncMasterSec", 60);
-    this.MASTER_TIMEOUT_MS = conf.getInt("dts.master.timeoutMs", 500);
+    this.MASTER_TIMEOUT_MS = conf.getInt("dts.master.timeoutMs", 1000);
     this.UNKNOWN_MASTER = new NettyRpcEndpointRef(conf, new RpcEndpointAddress("unknown", -1, "unknown"), (NettyRpcEnv) rpcEnv);
 
     this.syncMasterThread = ThreadUtil.newDaemonSingleThreadScheduledExecutor("worker-syncMaster");
     this.taskDispatcher = new TaskDispatcher(conf, this, tw);
     this.reportToMasterThread = ThreadUtil.newDaemonSingleThreadExecutor("worker-reportToMaster");
     this.reportToMasterThread.submit(new ReportLoop());
+
+    this.isSeed = conf.getBoolean("dts.worker.stage", false);
 
     this.metricsSystem = MetricsSystem.createMetricsSystem(conf);
     this.workerSource = new WorkerSource(this);
@@ -109,23 +112,18 @@ public class Worker extends RpcEndpoint {
     try {
       registerClient = new RegisterClient(conf, new MasterNodeChangeListener());
       registerClient.start();
-      instance = ServiceInstance.<WorkerNodeDetail>builder()
+      instance = ServiceInstance.<NodeDetail>builder()
         .address(host)
         .port(port)
         .name(RegisterServiceName.WORKER)
-        .payload(new WorkerNodeDetail(WORKER_ID, WORKER_GROUP_ID, THREAD_NUM, tw.taskMethodDetails))
+        .payload(new NodeDetail(WORKER_ID, WORKER_GROUP_ID, THREAD_NUM, tw.taskMethodDetails, isSeed))
         .build();
       registerClient.registerService(instance);
-
-      syncMasterTask = syncMasterThread.scheduleAtFixedRate(new Runnable() {
-        @Override public void run() {
-          refreshMaster();
-        }
-      }, 0, SYNC_MASTER_SEC, TimeUnit.SECONDS);
-      logger.info("Worker {} on {} started", WORKER_ID, rpcEnv.address());
+      syncMasterTask = syncMasterThread.scheduleAtFixedRate(() -> refreshMaster(), 0, SYNC_MASTER_SEC, TimeUnit.SECONDS);
 
       metricsSystem.registerSource(workerSource);
       metricsSystem.start();
+      logger.info("Worker {} on {} started", WORKER_ID, rpcEnv.address());
     } catch (Exception e) {
       throw new DTSException(e);
     }
@@ -206,15 +204,8 @@ public class Worker extends RpcEndpoint {
   }
 
   private void refreshMaster() {
-    try {
-      masterLock.lock();
-      List<RpcRegisterMessage> messages = registerClient.getByServiceName(RegisterServiceName.MASTER);
-      refreshMaster(messages);
-    } finally {
-      if (masterLock.isHeldByCurrentThread()) {
-        masterLock.unlock();
-      }
-    }
+    List<RpcRegisterMessage> messages = registerClient.getByServiceName(RegisterServiceName.MASTER);
+    refreshMaster(messages);
   }
 
   private void refreshMaster(List<RpcRegisterMessage> messages) {
@@ -225,7 +216,7 @@ public class Worker extends RpcEndpoint {
         try {
           RpcEndpointAddress address = new RpcEndpointAddress(message.address, EndpointNames.MASTER_ENDPOINT);
           RpcEndpointRef masterRef = new NettyRpcEndpointRef(conf, address, (NettyRpcEnv) rpcEnv);
-          Future<Boolean> future = masterRef.ask(new AskMaster());
+          Future<Boolean> future = masterRef.ask(new AskLeader());
           Boolean isLeader = future.get(MASTER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
           if (isLeader != null && isLeader) {
             master = Optional.of(masterRef);
@@ -265,7 +256,6 @@ public class Worker extends RpcEndpoint {
         } catch (Exception e) {
           logger.error("Report message to master error.", e);
         }
-
       }
     }
   }

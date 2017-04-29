@@ -22,17 +22,17 @@ import java.util.Set;
  * @author zhangxin
  */
 public class RegisterClient {
-  private ServiceDiscovery<WorkerNodeDetail> serviceDiscovery;
+  private ServiceDiscovery<NodeDetail> serviceDiscovery;
   private ZKNodeChangeListener listener;
-  private Map<String, ServiceCache<WorkerNodeDetail>> serviceCaches = Maps.newHashMap();
+  private Map<String, ServiceCache<NodeDetail>> serviceCaches = Maps.newHashMap();
   private Object serviceCacheLock = new Object();
 
   public RegisterClient(DTSConf conf, ZKNodeChangeListener listener) {
     CuratorFramework zk = CuratorUtil.newClient(conf);
     String basePath = conf.get("dts.zookeeper.dir", "/dts") + "/register";
-    JsonInstanceSerializer<WorkerNodeDetail> serializer = new JsonInstanceSerializer<>(WorkerNodeDetail.class);
+    JsonInstanceSerializer<NodeDetail> serializer = new JsonInstanceSerializer<>(NodeDetail.class);
     serviceDiscovery =
-      ServiceDiscoveryBuilder.builder(WorkerNodeDetail.class).client(zk).basePath(basePath).serializer(serializer).build();
+      ServiceDiscoveryBuilder.builder(NodeDetail.class).client(zk).basePath(basePath).serializer(serializer).build();
     this.listener = listener;
 
     List<String> listeningServiceNames = listener.getListeningServiceNames();
@@ -85,9 +85,9 @@ public class RegisterClient {
   }
 
   public List<RpcRegisterMessage> getByServiceName(String serviceName) {
-    List<ServiceInstance<WorkerNodeDetail>> instances = serviceCaches.get(serviceName).getInstances();
+    List<ServiceInstance<NodeDetail>> instances = serviceCaches.get(serviceName).getInstances();
     List<RpcRegisterMessage> messages = Lists.newArrayList();
-    for (ServiceInstance<WorkerNodeDetail> instance : instances) {
+    for (ServiceInstance<NodeDetail> instance : instances) {
       messages.add(new RpcRegisterMessage(instance));
     }
     return messages;

@@ -13,4 +13,6 @@ public class Constant {
   public static final String WORKER_GROUPS = "workerGroups";
   public static final String TASKS = "tasks";
   public static final String FIRST_GROUP_TASKS = "firstGroupTasks";
+
+  public static final String TAG = "tag";
 }

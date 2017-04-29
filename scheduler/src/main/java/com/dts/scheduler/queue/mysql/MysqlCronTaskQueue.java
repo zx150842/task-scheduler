@@ -1,6 +1,7 @@
 package com.dts.scheduler.queue.mysql;
 
 import com.dts.core.metrics.MetricsSystem;
+import com.google.common.base.Throwables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -50,9 +51,9 @@ public class MysqlCronTaskQueue extends AbstractSqlQueue implements CronTaskQueu
     this.mysqlQueueSource = new MysqlQueueSource();
     MetricsSystem.createMetricsSystem(conf).registerSource(mysqlQueueSource);
     long cronJobRefreshSec = conf.getLong("dts.master.cronJob.refreshSec", 300);
-    refreshJobMap();
+    refreshJobs();
     backend = ThreadUtil.newDaemonSingleThreadScheduledExecutor("cron-job-refresh");
-    backend.scheduleAtFixedRate(() -> refreshJobMap(), cronJobRefreshSec, cronJobRefreshSec, TimeUnit.SECONDS);
+    backend.scheduleAtFixedRate(() -> refreshJobs(), cronJobRefreshSec, cronJobRefreshSec, TimeUnit.SECONDS);
   }
 
   @Override public List<JobConf> getAllValid() {
@@ -105,7 +106,11 @@ public class MysqlCronTaskQueue extends AbstractSqlQueue implements CronTaskQueu
   }
 
   @Override public JobConf getJob(String jobId) {
-    return jobs.get(jobId);
+    JobConf jobConf = jobs.get(jobId);
+    if (jobConf == null) {
+      jobConf = getJobFromDB(jobId);
+    }
+    return jobConf;
   }
 
   @Override public TaskConf getNextToTriggerTask(String jobId, String taskId) {
@@ -119,13 +124,31 @@ public class MysqlCronTaskQueue extends AbstractSqlQueue implements CronTaskQueu
     return null;
   }
 
+  JobConf getJobFromDB(String jobId) {
+    SqlSession sqlSession = null;
+    JobConf jobConf = null;
+    try {
+      sqlSession = MybatisUtil.getSqlSession();
+      List<CronJob> jobs = sqlSession.selectList(PREFIX + ".getByJobId", jobId);
+      if (jobs != null && !jobs.isEmpty()) {
+        jobConf = deserializeCronJob(jobs.get(0));
+      }
+    } catch (Exception e) {
+      logger.error(Throwables.getStackTraceAsString(e));
+    } finally {
+      MybatisUtil.closeSqlSession(sqlSession);
+    }
+    return jobConf;
+  }
+
   public ReentrantLock triggerJobLock() {
     return lock;
   }
 
-  private void refreshJobMap() {
+  public boolean refreshJobs() {
     mysqlQueueSource.refreshJobMeter.mark();
     SqlSession sqlSession = null;
+    boolean success;
     try {
       sqlSession = MybatisUtil.getSqlSession();
       List<CronJob> cronJobs = sqlSession.selectList(PREFIX + ".getAllValid");
@@ -143,14 +166,17 @@ public class MysqlCronTaskQueue extends AbstractSqlQueue implements CronTaskQueu
       lock.lock();
       jobs = map;
       triggerJobs = set;
+      success = true;
     } catch (Exception e) {
-      throw e;
+      logger.error(Throwables.getStackTraceAsString(e));
+      success = false;
     } finally {
       if (lock.isHeldByCurrentThread()) {
         lock.unlock();
       }
       MybatisUtil.closeSqlSession(sqlSession);
     }
+    return success;
   }
 
   private JobConf deserializeCronJob(CronJob cronJob) {

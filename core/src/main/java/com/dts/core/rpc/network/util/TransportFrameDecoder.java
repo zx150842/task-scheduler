@@ -12,6 +12,15 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 
 /**
+ * 这个类完成TCP粘包/拆包过程，实现从网络接收字节流并组装成一个个完整的包，提供给下游handler
+ *
+ * <p>一个完整包的结构：
+ * <p>| header | message body |
+ * <p>其中header结构如下：
+ * <p>| frame length | message type | message meta |
+ * <p>其中message meta结构如下：
+ * <p>| requestId | body size |
+ *
  * @author zhangxin
  */
 public class TransportFrameDecoder extends ChannelInboundHandlerAdapter {
@@ -24,7 +33,9 @@ public class TransportFrameDecoder extends ChannelInboundHandlerAdapter {
   private final LinkedList<ByteBuf> buffers = Lists.newLinkedList();
   private final ByteBuf frameLenBuf = Unpooled.buffer(LENGTH_SIZE, LENGTH_SIZE);
 
+  // 从网络接收到的字节数
   private long totalSize = 0;
+  // 一个完整包除去frame length之外的大小
   private long nextFrameSize = UNKNOWN_FRAME_SIZE;
   private volatile  Interceptor interceptor;
 
@@ -35,7 +46,6 @@ public class TransportFrameDecoder extends ChannelInboundHandlerAdapter {
     totalSize += in.readableBytes();
 
     while (!buffers.isEmpty()) {
-      // First, feed the interceptor, and if it's still, active, try again.
       if (interceptor != null) {
         ByteBuf first = buffers.getFirst();
         int available = first.readableBytes();
@@ -49,7 +59,6 @@ public class TransportFrameDecoder extends ChannelInboundHandlerAdapter {
         }
         totalSize -= read;
       } else {
-        // Interceptor is not active, so try to decode one frame.
         ByteBuf frame = decodeNext();
         if (frame == null) {
           break;
@@ -64,12 +73,10 @@ public class TransportFrameDecoder extends ChannelInboundHandlerAdapter {
       return nextFrameSize;
     }
 
-    // We know there's enough data. If the first buffer contains all the data, great. Otherwise,
-    // hold the bytes for the frame length in a composite buffer until we have enough data to read
-    // the frame size. Normally, it should be rare to need more than one buffer to read the frame
-    // size.
     ByteBuf first = buffers.getFirst();
+    // 如果收到包的大小大于8个字节（即包含完整的frame length）
     if (first.readableBytes() >= LENGTH_SIZE) {
+      // 直接读取frame length（包长度），并算出除了frame length之外的包大小
       nextFrameSize = first.readLong() - LENGTH_SIZE;
       totalSize -= LENGTH_SIZE;
       if (!first.isReadable()) {
@@ -78,10 +85,12 @@ public class TransportFrameDecoder extends ChannelInboundHandlerAdapter {
       return nextFrameSize;
     }
 
+    // 如果收到的字节数不足8个（即出现半包的情况），则需要等待直到读到完整的包
     while (frameLenBuf.readableBytes() < LENGTH_SIZE) {
       ByteBuf next = buffers.getFirst();
       int toRead = Math.min(next.readableBytes(), LENGTH_SIZE - frameLenBuf.readableBytes());
       frameLenBuf.writeBytes(next, toRead);
+      // 如果当前包已经读完则直接删掉
       if (!next.isReadable()) {
         buffers.removeFirst().release();
       }
@@ -99,19 +108,16 @@ public class TransportFrameDecoder extends ChannelInboundHandlerAdapter {
       return null;
     }
 
-    // Reset size for next frame.
     nextFrameSize = UNKNOWN_FRAME_SIZE;
 
     Preconditions.checkArgument(frameSize < MAX_FRAME_SIZE, "Too large frame: %s", frameSize);
     Preconditions.checkArgument(frameSize > 0, "Frame length should be positive: %s", frameSize);
 
-    // If the first buffer holds the entire frame, return it.
     int remaining = (int) frameSize;
     if (buffers.getFirst().readableBytes() >= remaining) {
       return nextBufferForFrame(remaining);
     }
 
-    // Otherwise, create a composite buffer.
     CompositeByteBuf frame = buffers.getFirst().alloc().compositeBuffer(Integer.MAX_VALUE);
     while (remaining > 0) {
       ByteBuf next = nextBufferForFrame(remaining);

@@ -3,22 +3,14 @@ buildscript {
 		jcenter()
 	}
 	dependencies {
-		classpath("org.springframework.boot:spring-boot-gradle-plugin:$SPRING_BOOT_VERSION")
+		classpath("org.springframework.boot:spring-boot-gradle-plugin:$springBootVersion")
 	}
 }
 
-apply plugin: 'java'
 apply plugin: 'org.springframework.boot'
-apply plugin: 'war'
 
-war {
-	archiveName = 'admin.war'
-}
-
-sourceCompatibility = 1.8
-
-repositories {
-	jcenter()
+jar {
+	archiveName = 'project.jar'
 }
 
 configurations {
@@ -30,7 +22,7 @@ dependencies {
 		exclude group: "org.slf4j"
 	}
 	compile('org.springframework.boot:spring-boot-starter-freemarker')
-	compile("org.mybatis.spring.boot:mybatis-spring-boot-starter:$MYBATIS_SPRING_BOOT_STARTER")
+	compile("org.mybatis.spring.boot:mybatis-spring-boot-starter:$mybatisSpringBootStarterVersion")
 	compile('org.springframework.boot:spring-boot-starter-web')
 	runtime('mysql:mysql-connector-java')
 	providedRuntime('org.springframework.boot:spring-boot-starter-tomcat')

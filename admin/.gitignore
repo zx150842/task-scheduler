@@ -1,0 +1,11 @@
+### Intellij ###
+.idea/
+*.iml
+
+### Gradle ###
+.gradle
+
+### Java ###
+*.class
+build
+out/

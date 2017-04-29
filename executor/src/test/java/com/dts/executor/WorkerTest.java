@@ -21,10 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-
-import static org.junit.Assert.*;
 
 /**
  * @author zhangxin
@@ -67,9 +64,7 @@ public class WorkerTest {
     String sysId = "1";
     TriggeredTaskInfo task = new TriggeredTaskInfo(jobId, workerGroup, taskId,
         taskName, params, sysId, false);
-    Future<DeployMessages.LaunchedTask> future = _workerRef.ask(new DeployMessages.LaunchTask(task));
-    DeployMessages.LaunchedTask message = future.get();
-    assertEquals(message.message, "success");
+    _workerRef.send(new DeployMessages.LaunchTask(task));
   }
 
   @Test

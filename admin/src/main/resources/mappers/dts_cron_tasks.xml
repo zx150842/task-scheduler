@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<mapper namespace="com.dts.admin.dao.ExecuteTaskDao">
+    <resultMap id="baseMap" type="com.dts.admin.common.vo.TaskLog">
+        <result column="job_id" property="jobId"/>
+        <result column="task_id" property="taskId"/>
+        <result column="task_name" property="taskName"/>
+        <result column="worker_group" property="workerGroup"/>
+        <result column="sys_id" property="sysId"/>
+        <result column="params" property="params"/>
+        <result column="manual_trigger" property="manualTrigger"/>
+        <result column="worker_id" property="workerId"/>
+        <result column="executable_time" property="executableTime"/>
+        <result column="executing_time" property="executingTime"/>
+        <result column="status" property="status"/>
+        <result column="resumes" property="resumes"/>
+    </resultMap>
+
+    <sql id="tableName">
+        dts_cron_tasks
+    </sql>
+
+    <sql id="columnAll">
+        job_id,
+        task_id,
+        task_name,
+        worker_group,
+        sys_id,
+        params,
+        manual_trigger,
+        worker_id,
+        executable_time,
+        executing_time,
+        status,
+        resumes
+    </sql>
+
+    <select id="getAll" resultMap="baseMap">
+        select <include refid="columnAll"/>
+        from <include refid="tableName"/>
+        order by id desc
+    </select>
+
+    <select id="getBySysId" resultMap="baseMap">
+        select <include refid="columnAll"/>
+        from <include refid="tableName"/>
+        where sys_id = #{sysId}
+    </select>
+</mapper>

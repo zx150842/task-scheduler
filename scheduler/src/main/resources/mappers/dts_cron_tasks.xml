@@ -93,7 +93,7 @@
 
     <update id="resume">
         update <include refid="tableName"/>
-        set status = 1
+        set status = 1, resumes = resumes + 1
         where status = 2 and sys_id = #{sysId}
     </update>
 

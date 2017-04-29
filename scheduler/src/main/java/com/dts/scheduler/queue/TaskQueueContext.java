@@ -5,7 +5,6 @@ import com.dts.core.metrics.MetricsSystem;
 import com.dts.core.util.CronExpressionUtil;
 import com.dts.core.util.IdUtil;
 import com.dts.core.util.ThreadUtil;
-import com.dts.scheduler.MasterSource;
 import com.dts.scheduler.queue.mysql.MysqlFinishedTaskQueue;
 
 import com.google.common.base.Throwables;
@@ -43,7 +42,7 @@ public class TaskQueueContext {
 
   private final long TASK_TRIGGER_INTERVAL_MS;
   private final long TASK_TIMEOUT_CHECK_MS;
-  private final long TASK_MAX_EXECUTING_TIME_MS;
+  private final long TASK_MAX_EXECUTING_TIME_SEC;
 
   public final LinkedBlockingDeque<TriggeredTaskInfo> executableTaskCache =
       Queues.newLinkedBlockingDeque();
@@ -56,7 +55,7 @@ public class TaskQueueContext {
   public TaskQueueContext(DTSConf conf) {
     TASK_TRIGGER_INTERVAL_MS = conf.getLong("dts.task.trigger.intervalMs", 1000);
     TASK_TIMEOUT_CHECK_MS = conf.getLong("dts.task.timeout.checkMs", 1000);
-    TASK_MAX_EXECUTING_TIME_MS = conf.getLong("dts.task.max.executingSec", 3600) * 1000;
+    TASK_MAX_EXECUTING_TIME_SEC = conf.getLong("dts.task.max.executingSec", -1);
     String queueType = conf.get("dts.task.queue.type", "mysql");
     if ("mysql".equals(queueType)) {
       cronTaskQueue = new MysqlCronTaskQueue(conf);
@@ -73,7 +72,6 @@ public class TaskQueueContext {
         ThreadUtil.newDaemonSingleThreadScheduledExecutor("task-generator");
     this.executingTaskTimeoutCheckThread =
         ThreadUtil.newDaemonSingleThreadScheduledExecutor("timeout-executing-task-remove");
-    initCache();
   }
 
   private void initCache() {
@@ -83,38 +81,56 @@ public class TaskQueueContext {
       if (!taskIdSet.contains(task.getTaskId())) {
         executableTaskCache.offer(task);
         taskIdSet.add(task.getTaskId());
+      } else {
+        skipTask(task);
       }
     }
-    // TODO add executing tasks
   }
 
   public void start() {
+    initCache();
     generateExecutableTaskThread.scheduleAtFixedRate(new CronTaskGenerator(), 0L,
         TASK_TRIGGER_INTERVAL_MS / 2, TimeUnit.MILLISECONDS);
     executingTaskTimeoutCheckThread.scheduleAtFixedRate(new TaskTimeOutCheck(), 0L,
         TASK_TIMEOUT_CHECK_MS, TimeUnit.MILLISECONDS);
   }
 
-  public synchronized TriggeredTaskInfo get2ExecutingTask() throws InterruptedException {
+  public void stop() {
+    if (generateExecutableTaskThread != null) {
+      generateExecutableTaskThread.shutdownNow();
+    }
+    if (executingTaskTimeoutCheckThread != null) {
+      executingTaskTimeoutCheckThread.shutdownNow();
+    }
+  }
+
+  public TriggeredTaskInfo get2ExecutingTask() throws InterruptedException {
     return taskScheduler.schedule();
   }
 
-  public synchronized boolean resumeTask(TriggeredTaskInfo task) {
+  public boolean resumeExecutableTask(TriggeredTaskInfo task) {
     return executableTaskCache.offer(task);
   }
 
-  public synchronized boolean skipTask(TriggeredTaskInfo task) {
+  public void resumeExecutingTask(TriggeredTaskInfo task) {
+    removeExecutingTask(task.getSysId(), task.getTaskId());
+    executingTaskQueue.resume(task.getSysId());
+    executableTaskCache.offer(task);
+  }
+
+  public boolean skipTask(TriggeredTaskInfo task) {
     taskQueueSource.skipTaskMeter.mark();
     boolean success;
     success = executableTaskQueue.remove(task.getSysId());
     if (success) {
       task.setStatus(TaskStatus.SKIP);
+      task.setExecuteResult("Task failed because there is other task has same task-id and sys-id larger than current task");
       success = finishedTaskQueue.add(task);
     }
     return success;
   }
 
-  public synchronized boolean executingTask(TriggeredTaskInfo task) {
+  public boolean executingTask(TriggeredTaskInfo task) {
     boolean success;
     if (task != null) {
       success = executingTaskQueue.add(task);
@@ -129,7 +145,18 @@ public class TaskQueueContext {
     return success;
   }
 
-  public synchronized void completeTask(String sysId, String message) {
+  public boolean removeOverRetryTask(TriggeredTaskInfo task) {
+    boolean success;
+    success = executableTaskQueue.remove(task.getSysId());
+    if (success) {
+      task.setStatus(TaskStatus.OVER_RETRY);
+      task.setExecuteResult(String.format("Task failed because over %s retry times", task.getRetryCount()));
+      success = finishedTaskQueue.add(task);
+    }
+    return success;
+  }
+
+  public void completeTask(String sysId, String message) {
     TriggeredTaskInfo task = executingTaskQueue.getBySysId(sysId);
     if (task == null) {
       logger.error("executing queue has no task, sysId: {}", sysId);
@@ -152,28 +179,28 @@ public class TaskQueueContext {
     }
   }
 
-  public synchronized boolean manualTriggerJob(JobConf manualTriggerJobConf) {
+  public boolean refreshJobs() {
+    return cronTaskQueue.refreshJobs();
+  }
+
+  public TriggeredTaskInfo manualTriggerJob(JobConf manualTriggerJobConf, boolean runOnSeed) {
     String jobId = manualTriggerJobConf.getJobId();
-    if (cronTaskQueue.containJob(jobId)) {
-      JobConf jobConf = manualTriggerJobConf;
-      if (jobConf == null || jobConf.getTasks() == null || jobConf.getTasks().isEmpty()) {
-        jobConf = cronTaskQueue.getJob(jobId);
-      }
-      if (jobConf == null || jobConf.getTasks() == null || jobConf.getTasks().isEmpty()) {
-        logger.error("Cannot trigger job {} with no task to execute", jobId);
-        return false;
-      }
+    JobConf jobConf = cronTaskQueue.getJob(jobId);
+    if (jobConf != null && jobConf.getTasks() != null && !jobConf.getTasks().isEmpty()) {
       TaskConf taskConf = jobConf.getTasks().get(0);
       TriggeredTaskInfo task =
           generateTriggerTask(taskConf, jobId, jobConf.getWorkerGroup(), new Date(), true, null);
+      task.setRunOnSeed(runOnSeed);
       executableTaskQueue.add(task);
       executableTaskCache.offerFirst(task);
-      return true;
+      return task;
+    } else {
+      logger.error("Cannot trigger job {} with no task to execute", jobId);
     }
-    return false;
+    return null;
   }
 
-  private synchronized void removeExecutingTask(String sysId, String taskId) {
+  private void removeExecutingTask(String sysId, String taskId) {
     List<TriggeredTaskInfo> executingTasks = executingTaskCache.get(taskId);
     if (executingTasks != null) {
       TriggeredTaskInfo toRemoveTask = null;
@@ -245,31 +272,39 @@ public class TaskQueueContext {
 
     @Override
     public void run() {
-      taskQueueSource.timeoutTaskCheckMeter.mark();
-      List<TriggeredTaskInfo> tasks = (List<TriggeredTaskInfo>) executingTaskCache.values();
-      if (tasks == null || tasks.isEmpty()) {
-        return;
-      }
-      long now = System.currentTimeMillis();
-      for (TriggeredTaskInfo task : tasks) {
-        if (task.getExecutingTime() == null) {
-          logger.error("Executing Task [sysId={}], executingTime is null", task.getSysId());
-          continue;
+      try {
+        taskQueueSource.timeoutTaskCheckMeter.mark();
+        List<TriggeredTaskInfo> tasks = (List<TriggeredTaskInfo>) executingTaskCache.values();
+        if (tasks == null || tasks.isEmpty()) {
+          return;
         }
-        long executingTimeMs = task.getExecutingTime().getTime() - now;
-        long nextTriggerTime = task.getNextTriggerTime() != null
-            ? task.getNextTriggerTime().getTime() : Long.MAX_VALUE;
-        long maxExecutingTimeMs =
-            Math.min(TASK_MAX_EXECUTING_TIME_MS, nextTriggerTime - task.getTriggerTime().getTime());
-        if (maxExecutingTimeMs <= executingTimeMs) {
-          executingTaskQueue.resume(task.getSysId());
-          removeExecutingTask(task.getSysId(), task.getTaskId());
-          executableTaskCache.add(task);
-          taskQueueSource.timeoutTaskMeter.mark();
-          logger.warn(
+        long now = System.currentTimeMillis();
+        for (TriggeredTaskInfo task : tasks) {
+          if (task.getExecutingTime() == null) {
+            logger.error("Executing Task [sysId={}], executingTime is null", task.getSysId());
+            continue;
+          }
+          long executingTimeMs = task.getExecutingTime().getTime() - now;
+          long nextTriggerTime = task.getNextTriggerTime() != null ?
+            task.getNextTriggerTime().getTime() :
+            Long.MAX_VALUE;
+          long maxExecutingTimeMs;
+          if (TASK_MAX_EXECUTING_TIME_SEC == -1) {
+            maxExecutingTimeMs = nextTriggerTime - task.getTriggerTime().getTime();
+          } else {
+            maxExecutingTimeMs = Math.min(TASK_MAX_EXECUTING_TIME_SEC * 1000,
+              nextTriggerTime - task.getTriggerTime().getTime());
+          }
+          if (maxExecutingTimeMs <= executingTimeMs) {
+            resumeExecutingTask(task);
+            taskQueueSource.timeoutTaskMeter.mark();
+            logger.error(
               "Task [sysId={}] has already run {} ms, greater than max run time {}, resume task to executable",
               task.getSysId(), executingTimeMs, maxExecutingTimeMs);
+          }
         }
+      } catch (Throwable e) {
+        logger.error(Throwables.getStackTraceAsString(e));
       }
     }
   }

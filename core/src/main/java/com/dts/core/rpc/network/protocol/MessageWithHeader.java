@@ -35,23 +35,28 @@ public class MessageWithHeader extends AbstractReferenceCounted implements FileR
     this.bodyLength = bodyLength;
   }
 
-  @Override public long position() {
+  @Override
+  public long position() {
     return 0;
   }
 
-  @Override public long transfered() {
+  @Override
+  public long transfered() {
     return totalBytesTransferred;
   }
 
-  @Override public long transferred() {
+  @Override
+  public long transferred() {
     return totalBytesTransferred;
   }
 
-  @Override public long count() {
+  @Override
+  public long count() {
     return headerLength + bodyLength;
   }
 
-  @Override public long transferTo(WritableByteChannel target, long position) throws IOException {
+  @Override
+  public long transferTo(WritableByteChannel target, long position) throws IOException {
     Preconditions.checkArgument(position == totalBytesTransferred, "Invalid position");
     long writtenHeader = 0;
     if (header.readableBytes() > 0) {
@@ -77,11 +82,13 @@ public class MessageWithHeader extends AbstractReferenceCounted implements FileR
     return this;
   }
 
-  @Override public FileRegion touch(Object hint) {
+  @Override
+  public FileRegion touch(Object hint) {
     return this;
   }
 
-  @Override protected void deallocate() {
+  @Override
+  protected void deallocate() {
     header.release();
     ReferenceCountUtil.release(body);
     if (managedBuffer != null) {
@@ -103,8 +110,8 @@ public class MessageWithHeader extends AbstractReferenceCounted implements FileR
 
   private int copyByteBuf(ByteBuf buf, WritableByteChannel target) throws IOException {
     ByteBuffer buffer = buf.nioBuffer();
-    int written = (buffer.remaining() <= NIO_BUFFER_LIMIT) ?
-      target.write(buffer) : writeNioBuffer(target, buffer);
+    int written = (buffer.remaining() <= NIO_BUFFER_LIMIT) ? target.write(buffer)
+        : writeNioBuffer(target, buffer);
     buf.skipBytes(written);
     return written;
   }

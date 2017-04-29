@@ -34,12 +34,12 @@ public class RegisterClientTest {
         }
       });
       registerClient.start();
-      ServiceInstance<WorkerNodeDetail> instance1 =
-        ServiceInstance.<WorkerNodeDetail>builder().name(RegisterServiceName.WORKER).port(12346).address("127.0.0.1").build();
-      ServiceInstance<WorkerNodeDetail> instance2 =
-        ServiceInstance.<WorkerNodeDetail>builder().name("service1").port(12346).address("127.0.0.1").build();
-      ServiceInstance<WorkerNodeDetail> instance3 =
-        ServiceInstance.<WorkerNodeDetail>builder().name("service1").port(12348).address("127.0.0.1").build();
+      ServiceInstance<NodeDetail> instance1 =
+        ServiceInstance.<NodeDetail>builder().name(RegisterServiceName.WORKER).port(12346).address("127.0.0.1").build();
+      ServiceInstance<NodeDetail> instance2 =
+        ServiceInstance.<NodeDetail>builder().name("service1").port(12346).address("127.0.0.1").build();
+      ServiceInstance<NodeDetail> instance3 =
+        ServiceInstance.<NodeDetail>builder().name("service1").port(12348).address("127.0.0.1").build();
       registerClient.registerService(instance1);
       registerClient.registerService(instance2);
 //      registerClient.unregisterService(instance1);

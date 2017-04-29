@@ -19,7 +19,7 @@ public class MessageDecoder extends MessageToMessageDecoder<ByteBuf> {
 
   @Override
   protected void decode(ChannelHandlerContext ctx, ByteBuf in, List<Object> out) throws Exception {
-    // bytebuf格式：1byte:type 8byte:requestId 4byte content length
+    // bytebuf格式：1byte:type 8byte:requestId 4byte body size
     Message.Type msgType = Message.Type.decode(in);
     Message decoded = decode(msgType, in);
     assert decoded.type() == msgType;

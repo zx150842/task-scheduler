@@ -2,33 +2,53 @@ package com.dts.executor;
 
 import com.dts.core.rpc.RpcEnv;
 import com.dts.core.util.AddressUtil;
-import com.dts.core.util.DTSConfUtil;
 import com.dts.core.DTSConf;
 import com.dts.executor.task.TaskMethodWrapper;
 import com.dts.executor.task.TaskScanner;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.AbstractEnvironment;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.PropertySource;
+import org.springframework.stereotype.Component;
+
+import java.util.Iterator;
 
 /**
- * 执行器的启动入口, 应用项目需要注册这个类，并可以通过继承这个类重写{@link #getConfig()}方法。
- * 这里执行器应用的项目需要为spring项目，在执行器所属项目启动时， 启动器会被调用，
- * 进行初始化工作并在当前节点启动执行器
+ * 执行器的启动入口, 当前执行器由于使用了{@link PropertySource}配置方法，
+ * 外部应用项目需要使用spring boot
  *
  * @author zhangxin
  */
-public abstract class WorkerLauncher implements InitializingBean, DisposableBean {
+@Component
+@org.springframework.context.annotation.PropertySource(
+  "classpath:application-${spring.profiles.active}.properties")
+public class WorkerLauncher implements InitializingBean, DisposableBean {
 
   @Autowired
   private TaskScanner taskScanner;
+  @Autowired
+  private Environment env;
   private RpcEnv rpcEnv;
+  private final Logger logger = LoggerFactory.getLogger(WorkerLauncher.class);
 
   public final void start() {
     DTSConf conf = getConfig();
     int port = conf.getInt("dts.worker.port", 0);
     String packageName = conf.get("dts.worker.packageName");
     TaskMethodWrapper tw = taskScanner.getTaskMethodWrapper(packageName);
+    if (tw == null
+        || tw.taskMethodDetails == null
+        || tw.taskBeans == null
+        || tw.taskMethods == null) {
+      logger.error("There is no task found in current app, not to start worker and just return");
+      return;
+    }
     Worker worker = Worker.launchWorker(AddressUtil.getLocalHost(), port, tw, conf);
     rpcEnv = worker.rpcEnv();
   }
@@ -39,7 +59,19 @@ public abstract class WorkerLauncher implements InitializingBean, DisposableBean
    * @return
    */
   protected DTSConf getConfig() {
-    return DTSConfUtil.readFile("dts.properties");
+    DTSConf conf = new DTSConf(false);
+    for (Iterator it = ((AbstractEnvironment)env).getPropertySources().iterator(); it.hasNext();) {
+      PropertySource propertySource = (PropertySource) it.next();
+      if (propertySource instanceof MapPropertySource) {
+        MapPropertySource mapPropertySource = (MapPropertySource) propertySource;
+        for (String key : mapPropertySource.getSource().keySet()) {
+          if (key.startsWith("dts")) {
+            conf.set(key, (String) mapPropertySource.getSource().get(key));
+          }
+        }
+      }
+    }
+    return conf;
   }
 
   @Override
@@ -49,7 +81,9 @@ public abstract class WorkerLauncher implements InitializingBean, DisposableBean
 
   @Override
   public void destroy() throws Exception {
-    rpcEnv.shutdown();
-    rpcEnv.awaitTermination();
+    if (rpcEnv != null) {
+      rpcEnv.shutdown();
+      rpcEnv.awaitTermination();
+    }
   }
 }

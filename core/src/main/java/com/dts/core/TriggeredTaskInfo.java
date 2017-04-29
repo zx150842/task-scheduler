@@ -40,12 +40,15 @@ public class TriggeredTaskInfo implements Serializable {
   // task被分配运行的线程名
   transient private String threadName;
 
+  transient private boolean runOnSeed = false;
+
   transient private Date triggerTime;
   transient private Date executableTime;
   transient private Date executingTime;
   transient private Date finishTime;
   transient private Date nextTriggerTime;
   transient private String executeResult;
+  transient private int retryCount;
 
   public TriggeredTaskInfo() {}
 
@@ -92,6 +95,14 @@ public class TriggeredTaskInfo implements Serializable {
 
   public void setSysId(String sysId) {
     this.sysId = sysId;
+  }
+
+  public boolean isRunOnSeed() {
+    return runOnSeed;
+  }
+
+  public void setRunOnSeed(boolean runOnSeed) {
+    this.runOnSeed = runOnSeed;
   }
 
   public boolean isManualTrigger() {
@@ -172,6 +183,14 @@ public class TriggeredTaskInfo implements Serializable {
 
   public void setNextTriggerTime(Date nextTriggerTime) {
     this.nextTriggerTime = nextTriggerTime;
+  }
+
+  public int getRetryCount() {
+    return retryCount;
+  }
+
+  public void incrRetryCount() {
+    this.retryCount++;
   }
 
   @Override

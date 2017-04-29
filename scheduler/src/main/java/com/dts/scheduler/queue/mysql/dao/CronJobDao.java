@@ -19,4 +19,6 @@ public interface CronJobDao {
   List<CronJob> getAllValid();
 
   int updateTriggerTime(@Param("jobId") String jobId, @Param("lastTriggerTime") Date lastTriggerTime);
+
+  List<CronJob> getByJobId(@Param("jobId") String jobId);
 }

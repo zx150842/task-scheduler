@@ -1,5 +1,8 @@
 package com.dts.admin.service;
 
+import com.dts.admin.common.vo.TaskLog;
+import com.dts.admin.dao.ExecuteTaskDao;
+import com.dts.admin.dao.FinishTaskDao;
 import com.google.common.collect.Lists;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
@@ -27,6 +30,10 @@ public class CronJobService {
 
   @Autowired
   private CronJobDao cronJobDao;
+  @Autowired
+  private ExecuteTaskDao executeTaskDao;
+  @Autowired
+  private FinishTaskDao finishTaskDao;
 
   private ClientEndpoint clientEndpoint = ClientEndpoint.endpoint();
 
@@ -69,12 +76,20 @@ public class CronJobService {
     return convertToJobDtos(jobs);
   }
 
-  public boolean manualTrigger(String jobId) {
+  public String manualTrigger(String jobId, boolean runOnSeed) {
     CronJob cronJob = cronJobDao.getByJobId(jobId);
     if (cronJob == null) {
-      return false;
+      return null;
     }
-    return clientEndpoint.triggerJob(cronJob);
+    return clientEndpoint.triggerJob(cronJob, runOnSeed);
+  }
+
+  public TaskLog getTaskLog(String sysId) {
+    TaskLog log = executeTaskDao.getBySysId(sysId);
+    if (log == null) {
+      log = finishTaskDao.getBySysId(sysId);
+    }
+    return log;
   }
 
   public List<String> getWorkerGroups() {
@@ -83,6 +98,10 @@ public class CronJobService {
 
   public Set<Tuple2<String, String>> getTasks(String workerGroup) {
     return clientEndpoint.getTasks(workerGroup);
+  }
+
+  public boolean refreshJobs() throws Exception {
+    return clientEndpoint.refreshJobs();
   }
 
   private List<JobDto> convertToJobDtos(List<CronJob> list) {

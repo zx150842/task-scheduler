@@ -14,7 +14,15 @@ public class ExecutorService {
 
   private ClientEndpoint clientEndpoint = ClientEndpoint.endpoint();
 
-  public List<WorkerNodeDto> getAll() {
-    return clientEndpoint.getWorkers();
+  public List<WorkerNodeDto> getOnlineWorkers() {
+    return clientEndpoint.getOnlineWorkers();
+  }
+
+  public List<WorkerNodeDto> getSeedWorkers() {
+    return clientEndpoint.getSeedWorkers();
+  }
+
+  public boolean refreshWorkers() throws Exception {
+    return clientEndpoint.refreshMasterWorkers();
   }
 }

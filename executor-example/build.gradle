@@ -3,12 +3,10 @@ buildscript {
 		jcenter()
 	}
 	dependencies {
-		classpath("org.springframework.boot:spring-boot-gradle-plugin:$SPRING_BOOT_VERSION")
+		classpath("org.springframework.boot:spring-boot-gradle-plugin:$springBootVersion")
 	}
 }
 
-apply plugin: 'java'
-apply plugin: 'eclipse-wtp'
 apply plugin: 'org.springframework.boot'
 apply plugin: 'war'
 
@@ -16,19 +14,15 @@ war {
 	archiveName = 'executor-example.war'
 }
 
-sourceCompatibility = 1.8
-
-repositories {
-	jcenter()
-}
-
 configurations {
 	providedRuntime
 }
 
 dependencies {
-	compile(project(":executor")){
-		exclude group: "org.slf4j"
+	if (profile.equals("develop")) {
+		compile(project(":executor")) {exclude group: "org.slf4j"}
+	} else {
+		compile("com.dts.scheduler:executor:$version") {exclude group: "org.slf4j"}
 	}
 	compile('org.springframework.boot:spring-boot-starter-web')
 	runtime('mysql:mysql-connector-java')

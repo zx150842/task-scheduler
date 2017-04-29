@@ -54,8 +54,9 @@
                 <div class="col-xs-12">
 
                     <div class="box">
-                        <div class="box-header">
-                            <h3 class="box-title">调度节点列表</h3>
+                        <div class="box-header row">
+                            <div class="col-md-10"><h3 class="box-title">调度节点列表</h3></div>
+                            <div class="col-md-2"><button type="button" class="btn btn-sm btn-danger" onclick="refreshJob()">刷新任务</button></div>
                         </div>
                         <!-- /.box-header -->
                         <div class="box-body">
@@ -88,7 +89,14 @@
                                         <td>${item.status!}</td>
                                         <td>
                                             <button class="btn btn-xs btn-primary" onclick="showUpdateModal('${item.workerGroup!}','${item.taskName!}','${item.jobId!}','${item.params!}','${item.desc!}','${item.cronExpression!}','${item.taskId!}')">编辑</button>
-                                            <button type="button" class="btn btn-xs btn-primary" onclick="triggerJob('${item.jobId!}')">触发</button>
+                                            <div class="btn-group">
+                                                <a class="btn btn-xs btn-primary dropdown-toggle" data-toggle="dropdown" href="#">触发<span class="caret"></span></a>
+                                                <ul class="dropdown-menu">
+                                                    <li><a style="cursor: pointer;" onclick="triggerJob('${item.jobId!}',true)">stage</a></li>
+                                                    <li><a style="cursor: pointer;" onclick="triggerJob('${item.jobId!}',false)">online</a></li>
+                                                </ul>
+                                            </div>
+                                            <#--<button type="button" class="btn btn-xs btn-primary" onclick="triggerJob('${item.jobId!}')">触发</button>-->
                                             <#if item.status == 1><button type="button" class="btn btn-xs btn-warning" onclick="pauseOrRunJob('${item.jobId!}', 2)">暂停</button></#if>
                                             <#if item.status == 2><button type="button" class="btn btn-xs btn-success" onclick="pauseOrRunJob('${item.jobId!}', 1)">开始</button></#if>
                                             <button type="button" class="btn btn-xs btn-danger" onclick="deleteJob('${item.jobId!}')">删除</button>
@@ -213,6 +221,24 @@
     </div>
 </div>
 <a data-toggle="modal" data-target="#updateModal" id="updateDialog"></a>
+
+<div class="modal fade" id="logModal">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header row">
+                <div class="col-md-10"><h3 class="modal-title">手动触发任务日志</h3></div>
+                <div class="col-md-2">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+            </div>
+            <div id="taskLog" class="modal-body">
+            </div>
+        </div>
+    </div>
+</div>
+<a data-toggle="modal" data-target="#logModal" id="logDialog"></a>
 
 <#include "common/page.ftl">
 <script>
@@ -352,21 +378,73 @@
         })
     }
 
-    function triggerJob(jobId) {
+    function refreshLog(sysId, firstShow) {
+        var open = $('#logModal').hasClass('in')
+        if (!firstShow && !open) {
+            return
+        }
+        $.ajax({
+            url:'job/trigger/log',
+            type:'POST',
+            dataType:'json',
+            data:{"sysId":sysId},
+            success:function(data){
+                if (typeof(data) != 'undefined' && data != '') {
+                    var finish = false
+                    if (data.finishTime != null) {
+                        finish = true
+                    }
+                    var html
+                    if (finish) {
+                        html = '<div class="row"><div class="col-md-10">任务名称：' + data.taskName + ', 任务参数：' + data.params + '</div></div>';
+                    } else {
+                        html = '<div class="row"><div class="col-md-10">任务名称：' + data.taskName + ', 任务参数：' + data.params + '</div><div class="col-md-2"><i class="fa fa-refresh fa-spin"></i></div></div>';
+                    }
+                    if (data.workerId != null) {
+                        html += '<div>执行节点：' + data.workerId + '</div>'
+                    }
+                    if (data.executableTime != null) {
+                        html += '<div>触发时间：' + new Date(parseInt(data.executableTime)).toLocaleString() + '</div>'
+                    }
+                    if (data.executingTime != null) {
+                        html += '<div>开始执行时间：' + new Date(parseInt(data.executingTime)).toLocaleString() +　'</div>'
+                    }
+                    if (data.finishTime != null) {
+                        html += '<div>执行完成时间：' + new Date(parseInt(data.finishTime)).toLocaleString() + '</div>'
+                    }
+                    if (data.executeResult != null) {
+                        html += '<div>执行结果：' + data.executeResult + '</div>'
+                    }
+                    $("#taskLog").html(html)
+                    if (!finish) {
+                        setTimeout('refreshLog(' + sysId + ','+ false +')',1000)
+                    }
+                } else {
+                    alert("刷新失败");
+                }
+            },
+            error:function(data){
+                alert("执行失败！" + data)
+            }
+        })
+    }
+
+    function triggerJob(jobId,runOnSeed) {
         $.ajax({
             url:'job/trigger',
             type:'POST',
             dataType:'json',
-            data:{"jobId":jobId},
+            data:{"jobId":jobId,'runOnSeed':runOnSeed},
             success:function(data){
-                if (typeof(data) != 'undefined' && data == '0') {
-                    window.location.reload();
+                if (typeof(data) != 'undefined' && data != '') {
+                    $("#logDialog").click();
+                    refreshLog(data, true)
                 } else {
-                    alert(data);
+                    alert("触发任务失败");
                 }
             },
             error:function(data){
-                alert(data)
+                alert("执行失败！" + data)
             }
         })
     }
@@ -388,6 +466,29 @@
                 alert(data)
             }
        })
+    }
+
+    function refreshJob() {
+        $.ajax({
+            url:'job/refresh',
+            type:'POST',
+            dataType:'json',
+                data:{},
+            success:function(data){
+                if (typeof(data) != 'undefined' && data == '0') {
+                    alert("刷新成功")
+                } else {
+                    if (data == '-1') {
+                        alert("刷新失败")
+                    } else {
+                        alert(data);
+                    }
+                }
+            },
+            error:function(data){
+                alert(data)
+            }
+        })
     }
 </script>
 </body>

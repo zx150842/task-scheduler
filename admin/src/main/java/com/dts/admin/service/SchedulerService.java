@@ -16,4 +16,8 @@ public class SchedulerService {
   public List<MasterNodeDto> getAll() {
     return clientEndpoint.getMasters();
   }
+
+  public boolean refreshMaster() {
+    return clientEndpoint.refreshMasters();
+  }
 }
